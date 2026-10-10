@@ -81,6 +81,12 @@ table.grid{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:
 .grid td.req.vs{box-shadow:inset 0 0 0 2px var(--leave),inset 0 -5px 0 #e2a000}
 .grid td.req.vh{box-shadow:inset 0 0 0 2px var(--bad),inset 0 0 0 4px var(--leave)}
 .key{display:inline-block;width:14px;height:14px;border-radius:3px;box-shadow:inset 0 0 0 2px var(--leave);vertical-align:-2px;margin-right:4px}
+.grid .prev{min-width:46px;padding:0 4px;font-weight:700;white-space:nowrap;border-right:2px solid var(--line);background:#fbfcfe;font-size:12px}
+.grid th.prev{color:var(--mute);font-weight:600;line-height:1.15;font-size:11px}
+.grid td.prev[data-act]{cursor:pointer}
+.grid td.prev[data-act]:hover{background:var(--accent-bg)}
+.grid td.prev small{font-weight:600;margin-left:1px;opacity:.8}
+.grid td.prev.manual{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
 .grid td.stat{color:var(--mute);min-width:34px;font-variant-numeric:tabular-nums}
 .grid th.stat{color:var(--mute);font-weight:500}
 .grid tr.cov td{background:#fbfcfe;color:var(--mute);font-variant-numeric:tabular-nums}
@@ -574,7 +580,8 @@ function gridHtml({ edit, cells, mine }) {
     else if (v.codes && v.day != null) v.codes.forEach(c => { const k = c + '_' + v.day; if (v.hard || !cmap[k]) cmap[k] = v.hard ? 'low' : 'thin'; });
   });
   const groups = S.cfg.groups.filter(g => S.group === 'all' || g.id === S.group);
-  let head = '<tr><th class="name" rowspan="2">姓名</th>', head2 = '<tr>';
+  const pm = S.m === 1 ? 12 : S.m - 1, tails = edit ? effectiveTail() : null, extra = edit ? 1 : 0;
+  let head = '<tr><th class="name" rowspan="2">姓名</th>' + (edit ? `<th class="prev" rowspan="2" title="${pm} 月底已連上幾天、最後一班。點任一格可修改">上月<br>連班</th>` : ''), head2 = '<tr>';
   ctx.days.forEach(x => {
     head += `<th class="${x.rest ? 'rest' : ''}" title="${esc(x.holidayName)}">${x.d + 1}</th>`;
     head2 += `<th class="${x.rest ? 'rest' : ''}">${E.WD[x.wd]}</th>`;
@@ -584,11 +591,20 @@ function gridHtml({ edit, cells, mine }) {
   groups.forEach(g => {
     const people = activeStaff(g.id), codes = workShifts(g.id).filter(s => s.group === g.id && s.enabled !== false).map(s => s.code);
     if (!people.length) return;
-    body += `<tr class="sep"><td colspan="${n + 4}">${esc(g.name)}（${people.length}）</td></tr>`;
+    body += `<tr class="sep"><td colspan="${n + 4 + extra}">${esc(g.name)}（${people.length}）</td></tr>`;
     people.forEach(p => {
       const row = src[p.id] || [], st = edit ? S.result.stats[p.id] : null;
       const reqs = new Set(S.requests[p.id] || []), locks = (S.month.locks || {})[p.id] || {};
       body += `<tr class="${mine === p.id ? 'me' : ''}"><td class="name" title="${esc(p.name)}">${esc(p.name)}${p.counted === false ? '<span class="tag">不計</span>' : ''}${(p.prefer || []).length ? `<span class="tag">${esc(p.prefer.join('/'))}</span>` : ''}</td>`;
+      if (edit) {
+        // 上月底的連班：幾天、最後一班；手動改過的加底線
+        const tail = tails[p.id] || [];
+        let run = 0;
+        for (let i = tail.length - 1; i >= 0 && isWorkCode(tail[i]); i--) run++;
+        const last = run ? shiftOf(tail[tail.length - 1]) : null, manual = !!(S.month.prev || {})[p.id];
+        body += p.counted === false ? '<td class="prev"></td>'
+          : `<td class="prev ${manual ? 'manual' : ''}" data-act="prevOpen" title="${run ? `${pm} 月底已連上 ${run} 天，最後一天 ${esc(last.code)}` : `${pm} 月底休假`}${manual ? '（手動設定）' : ''}" style="${last ? `color:${last.color}` : ''}">${run ? `${esc(last.code)}<small>×${run}</small>` : '<span class="mute">休</span>'}</td>`;
+      }
       for (let d = 0; d < n; d++) {
         const c = row[d] || '', sh = shiftOf(c);
         const cls = ['c', edit ? '' : 'ro', vmap[p.id + '_' + d] || '', edit && locks[d] ? 'lock' : '', (edit || mine === p.id) && reqs.has(d) ? 'req' : '', S.focus === p.id + '_' + d ? 'vh' : ''].filter(Boolean).join(' ');
@@ -600,7 +616,7 @@ function gridHtml({ edit, cells, mine }) {
       body += `<td class="stat">${work}</td><td class="stat" ${st && off !== '' && S.result.quota != null && off < S.result.quota ? 'style="color:var(--bad);font-weight:700"' : ''}>${off}</td><td class="stat">${st && p.counted !== false ? st.restOff : ''}</td></tr>`;
     });
     codes.forEach(code => {
-      body += `<tr class="cov"><td class="name">${esc(code)} 人數</td>`;
+      body += `<tr class="cov"><td class="name">${esc(code)} 人數</td>${edit ? '<td class="prev"></td>' : ''}`;
       for (let d = 0; d < n; d++) {
         const v = people.filter(p => p.counted !== false && (src[p.id] || [])[d] === code).length;
         body += `<td class="${cmap[code + '_' + d] || ''}">${v || ''}</td>`;
