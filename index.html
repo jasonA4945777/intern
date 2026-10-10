@@ -9,7 +9,7 @@
   --bg:#f6f7f9; --card:#fff; --line:#e3e6ec; --line2:#eef0f4;
   --text:#1b2030; --mute:#6b7285; --accent:#2f5bd8; --accent-bg:#ecf1fe;
   --bad:#c81e3a; --bad-bg:#fdecef; --warn:#a15c00; --warn-bg:#fff4dc; --ok:#12804a; --ok-bg:#e3f6ec;
-  --rest:#fafbfd; --r:10px;
+  --rest:#fafbfd; --r:10px; --leave:#0d9488;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -77,7 +77,10 @@ table.grid{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:
 .grid td.vh{box-shadow:inset 0 0 0 2px var(--bad)}
 .grid td.vs{box-shadow:inset 0 -3px 0 #e2a000}
 .grid td.lock::after{content:"";position:absolute;right:2px;top:2px;width:5px;height:5px;border-radius:50%;background:#1b2030}
-.grid td.req::before{content:"假";position:absolute;left:1px;top:-1px;font-size:8px;font-weight:700;color:var(--bad)}
+.grid td.req{box-shadow:inset 0 0 0 2px var(--leave)}
+.grid td.req.vs{box-shadow:inset 0 0 0 2px var(--leave),inset 0 -5px 0 #e2a000}
+.grid td.req.vh{box-shadow:inset 0 0 0 2px var(--bad),inset 0 0 0 4px var(--leave)}
+.key{display:inline-block;width:14px;height:14px;border-radius:3px;box-shadow:inset 0 0 0 2px var(--leave);vertical-align:-2px;margin-right:4px}
 .grid td.stat{color:var(--mute);min-width:34px;font-variant-numeric:tabular-nums}
 .grid th.stat{color:var(--mute);font-weight:500}
 .grid tr.cov td{background:#fbfcfe;color:var(--mute);font-variant-numeric:tabular-nums}
@@ -386,9 +389,17 @@ const groupSeg = () => `<div class="seg">${[['all', '全部']].concat(S.cfg.grou
 // ── 班表（主管）──────────────────────────────────────────
 function schedPage() {
   if (!S.staff.length) return `<div class="empty">還沒有人員，請先到「人員」頁新增。</div>`;
-  const r = S.result, pub = S.month.published;
+  const pub = S.month.published;
+  // 只看某一組時，違規清單也只列那一組的
+  const inView = v => {
+    if (S.group === 'all') return true;
+    if (v.staff) return (staffById(v.staff) || {}).group === S.group;
+    if (v.codes) return v.codes.some(c => (shiftOf(c) || {}).group === S.group);
+    return true;
+  };
+  const r = Object.assign({}, S.result, { hard: S.result.hard.filter(inView), soft: S.result.soft.filter(inView) });
   const changed = pub && JSON.stringify(pub.cells) !== JSON.stringify(S.month.cells);
-  const hasCells = Object.keys(S.month.cells).length > 0;
+  const hasCells = activeStaff(S.group).some(p => (S.month.cells[p.id] || []).some(Boolean));
   const visible = r.soft.filter(v => !v.quiet);
   const st = leaveState(S.y, S.m);
   const caps = E.capacity(S.ctx).filter(c => S.group === 'all' || c.id === S.group);
@@ -419,6 +430,7 @@ function schedPage() {
       ${hasCells && visible.length ? `<span class="chip warn">提醒 ${visible.length}</span>` : ''}
       ${S.dirty ? '<span class="chip warn">有修改尚未存檔（只在這台裝置）</span>' : S.month.savedAt ? `<span class="chip">上次存檔 ${fmtTime(S.month.savedAt)}</span>` : ''}
       ${pub ? `<span class="chip">${changed ? '發布後有修改，同仁看到的還是舊版' : '同仁已可看到這份班表'}</span>` : '<span class="chip">尚未發布，同仁看不到</span>'}
+      <span class="chip"><span class="key"></span>預假</span>
     </div></div>
     ${gridHtml({ edit: true })}
     ${hasCells ? `<div class="viol">
@@ -456,7 +468,7 @@ function gridHtml({ edit, cells, mine }) {
       body += `<tr class="${mine === p.id ? 'me' : ''}"><td class="name" title="${esc(p.name)}">${esc(p.name)}${p.counted === false ? '<span class="tag">不計</span>' : ''}${(p.prefer || []).length ? `<span class="tag">${esc(p.prefer.join('/'))}</span>` : ''}</td>`;
       for (let d = 0; d < n; d++) {
         const c = row[d] || '', sh = shiftOf(c);
-        const cls = ['c', edit ? '' : 'ro', vmap[p.id + '_' + d] || '', edit && locks[d] ? 'lock' : '', edit && reqs.has(d) ? 'req' : '', S.focus === p.id + '_' + d ? 'vh' : ''].filter(Boolean).join(' ');
+        const cls = ['c', edit ? '' : 'ro', vmap[p.id + '_' + d] || '', edit && locks[d] ? 'lock' : '', (edit || mine === p.id) && reqs.has(d) ? 'req' : '', S.focus === p.id + '_' + d ? 'vh' : ''].filter(Boolean).join(' ');
         const style = sh ? `background:${sh.bg};color:${sh.color}` : (ctx.days[d].rest ? 'background:var(--rest)' : '');
         body += `<td class="${cls}" style="${style}" ${edit ? `data-act="cell" data-s="${esc(p.id)}" data-d="${d}"` : ''}>${esc(c)}</td>`;
       }
@@ -490,7 +502,7 @@ function leavePage() {
 }
 function viewPage() {
   const pub = S.month.published;
-  return `<div class="bar">${monthNav()}${groupSeg()}</div>
+  return `<div class="bar">${monthNav()}${groupSeg()}<span class="chip"><span class="key"></span>我的預假</span></div>
     ${pub ? gridHtml({ edit: false, cells: pub.cells, mine: S.user.id }) : `<div class="empty">${S.y - 1911} 年 ${S.m} 月的班表還沒發布。</div>`}`;
 }
 
