@@ -222,7 +222,6 @@ async function initStore() {
     console.error(e);
     Store = LocalStore;
     cloudError = e.code || e.message || String(e);
-    toast('連不上雲端資料庫，暫時改存在這台裝置', true);
   }
 }
 
@@ -342,12 +341,14 @@ function render() {
   if (now && scroll) { now.scrollLeft = scroll[0]; now.scrollTop = scroll[1]; }
 }
 
+const cloudHint = e => (/permission|insufficient/i.test(e) ? '資料庫規則沒有開放 nhSchedule，請到 Firestore「規則」分頁設定' : /api.?key|invalid/i.test(e) ? 'API 金鑰不正確' : /逾時|unavailable|not-found|offline/i.test(e) ? '可能還沒建立 Firestore 資料庫，或網路不通' : '');
+const cloudBanner = () => (cloudError ? `<div class="notice closed" style="margin:0 0 12px"><b>連不上雲端資料庫，資料暫時只存在這台裝置。</b><br>原因：${esc(cloudError)}${cloudHint(cloudError) ? '<br>' + cloudHint(cloudError) : ''}</div>` : '');
 function loginHtml() {
   const next = new Date(); next.setMonth(next.getMonth() + 1, 1);
   const st = leaveState(next.getFullYear(), next.getMonth() + 1);
   const first = !S.cfg.adminHash;
   return `<div class="login"><div class="login-box">
-    <h1>${esc(S.cfg.facility)}</h1><div class="mute">排班系統</div>
+    <h1>${esc(S.cfg.facility)}</h1><div class="mute">排班系統</div>${cloudError ? '<div style="margin-top:12px">' + cloudBanner() + '</div>' : ''}
     <div class="notice ${st.locked ? 'closed' : 'open'}">${next.getMonth() + 1} 月預假${st.locked ? '已截止，要補登請找主管' : `請在 ${st.text}前登記`}</div>
     <label>同仁登入</label>
     <select id="loginName"><option value="">請選擇姓名</option>${S.cfg.groups.map(g => `<optgroup label="${esc(g.name)}">${activeStaff(g.id).map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('')}</select>
@@ -366,7 +367,7 @@ function appHtml() {
   return `<header><div class="brand">${esc(S.cfg.facility)}</div>
     <div class="tabs">${tabs.map(t => `<button class="tab ${S.tab === t[0] ? 'on' : ''}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div>
     <div class="who"><span>${admin ? '主管' : esc(S.user.name)}　</span><button class="btn sm" data-act="logout">登出</button></div></header>
-    <main>${page()}</main>`;
+    <main>${cloudBanner()}${page()}</main>`;
 }
 const monthNav = () => `<div class="month"><button class="btn" data-act="month" data-d="-1" aria-label="上個月">‹</button><span>${S.y - 1911} 年 ${S.m} 月</span><button class="btn" data-act="month" data-d="1" aria-label="下個月">›</button></div>`;
 const groupSeg = () => `<div class="seg">${[['all', '全部']].concat(S.cfg.groups.map(g => [g.id, g.name])).map(g => `<button class="${S.group === g[0] ? 'on' : ''}" data-act="group" data-g="${g[0]}">${esc(g[1])}</button>`).join('')}</div>`;
