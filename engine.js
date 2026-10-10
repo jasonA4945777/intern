@@ -63,6 +63,8 @@
       fields: [{ k: 'staff', t: 'staff', label: '人員' }, { k: 'codes', t: 'codes', label: '班別' }, { k: 'min', t: 'num', label: '最少', optional: true }, { k: 'max', t: 'num', label: '最多', optional: true }] },
     maxConsecCode: { name: '同班別連續上限', desc: '指定班別最多連續上幾天（例如大夜不連上超過 5 天）。', custom: true,
       fields: [{ k: 'codes', t: 'codes', label: '班別' }, { k: 'days', t: 'num', label: '天數' }] },
+    maxKinds: { name: '每人每月班別種類', desc: '一個人一個月最多上幾種班別。超過時，以他最常上的幾種為準，其餘每一班算一次。', custom: true,
+      fields: [{ k: 'group', t: 'group', label: '適用組別' }, { k: 'max', t: 'num', label: '最多幾種' }] },
     avoidCode: { name: '盡量少排的班別', desc: '每排一次就扣分，排不出來時才會用到。', softOnly: true, custom: true,
       fields: [{ k: 'codes', t: 'codes', label: '班別' }] },
     preferShift: { name: '依主要班別排', desc: '人員頁設了「主要班別」的人，排到其他班別時扣分。', softOnly: true, fields: [] },
@@ -89,6 +91,7 @@
     { id: 'consec-c', type: 'maxConsec', name: '照服盡量不連上超過 4 天', enabled: true, hard: false, weight: 15, params: { group: 'care', days: 4 } },
     { id: 'quota', type: 'offQuota', name: '每月休假天數', enabled: true, hard: true, weight: 50, params: { mode: 'calendar', fixed: 10, extraWeight: 5 } },
     { id: 'leave', type: 'leaveOff', name: '預假必休', enabled: true, hard: true, weight: 50, params: {} },
+    { id: 'max-kinds', type: 'maxKinds', name: '每人一個月盡量 2 種班別就好', enabled: true, hard: false, weight: 6, params: { group: 'all', max: 2 } },
     { id: 'prefer', type: 'preferShift', name: '依主要班別排', enabled: true, hard: false, weight: 8, params: {} },
     { id: 'fair-work', type: 'fairWork', name: '上班天數平均', enabled: true, hard: false, weight: 12, params: {} },
     { id: 'fair-shift', type: 'fairShift', name: '各班次數平均', enabled: true, hard: false, weight: 2, params: { codes: ['D', 'E', 'N', 'D8', 'N8'] } },
@@ -195,7 +198,16 @@
       if (idx.length >= 2) fairSets.push({ r, code, idx });
     }));
 
-    const ctx = { year, month, dim, days, shifts, shiftMap, isWork, groups, staff, idIndex, R, requests, locks, prev, quota, calendarOff, pins, counts, consec, groupIdx, fairSets };
+    // 班別種類上限：每人適用的最嚴上限（0＝不受限）。受限的人，班別次數只和「也有上那個班」的人比平均。
+    // （input.kindRules：算分數明細時暫時關掉某條規則，仍要用完整規則判斷誰受限，比較基準才一致）
+    const kindRules = input.kindRules ? input.kindRules.filter(r => r.enabled && r.type === 'maxKinds').map(r => ({ p: r.params || {} })) : R.maxKinds;
+    const kindMax = staff.map(s => {
+      let m = 0;
+      kindRules.forEach(r => { if (!r.p.group || r.p.group === 'all' || r.p.group === s.group) { const v = Math.max(1, +r.p.max || 1); if (v < s.autoCodes.length) m = m ? Math.min(m, v) : v; } });
+      return m;
+    });
+    fairSets.forEach(f => { f.limited = f.idx.some(i => kindMax[i] > 0); });
+    const ctx = { year, month, dim, days, shifts, shiftMap, isWork, groups, staff, idIndex, R, requests, locks, prev, quota, calendarOff, pins, counts, consec, groupIdx, fairSets, kindMax };
     ctx.dayMatch = (dayType, d) => !dayType || dayType === 'all' || (dayType === 'holiday' ? days[d].rest : !days[d].rest);
     return ctx;
   }
@@ -352,6 +364,17 @@
         if (out) out.push({ hard: r.hard, rule: r.id, staff: p.id, msg: `${who} 本月 ${(r.p.codes || []).join('/')} 共 ${v} 次，${rangeText(r.p.min, r.p.max)}` });
       }
     }
+    // 班別種類上限：留下最常上的幾種，其餘的班數就是超出量
+    for (const r of R.maxKinds) {
+      if (r.p.group && r.p.group !== 'all' && r.p.group !== p.group) continue;
+      const max = Math.max(1, +r.p.max || 1), kinds = Object.keys(cnt);
+      if (kinds.length <= max) continue;
+      kinds.sort((a, b) => cnt[b] - cnt[a]);
+      let over = 0;
+      for (let k = max; k < kinds.length; k++) over += cnt[kinds[k]];
+      cost += over * r.cost;
+      if (out) out.push({ hard: r.hard, rule: r.id, staff: p.id, msg: `${who} 本月上了 ${kinds.length} 種班別（${kinds.map(c => `${c} ${cnt[c]}`).join('、')}），超過 ${max} 種` });
+    }
     for (const r of R.avoidCode) {
       let v = 0;
       for (const c of r.p.codes || []) v += cnt[c] || 0;
@@ -382,7 +405,13 @@
     const { R } = ctx;
     let cost = 0;
     for (const f of ctx.fairSets) {
-      cost += spread(ctx, f.idx, i => stats[i].cnt[f.code] || 0, f.r.cost, out,
+      let idx = f.idx;
+      if (f.limited) {                       // 有種類上限時，沒上這個班的人不列入比較
+        idx = [];
+        for (const i of f.idx) if (stats[i].cnt[f.code] || !ctx.kindMax[i]) idx.push(i);
+        if (idx.length < 2) continue;
+      }
+      cost += spread(ctx, idx, i => stats[i].cnt[f.code] || 0, f.r.cost, out,
         (a, hi, b, lo) => ({ hard: false, rule: f.r.id, msg: `${f.code} 次數不平均：${a} ${hi} 次、${b} ${lo} 次` }));
     }
     for (const r of R.fairWork) for (const idx of ctx.groupIdx) {
@@ -491,8 +520,26 @@
       return t;
     }
 
+    // 有班別種類上限時，先替每個人挑幾種「主力班別」，讓全組合起來剛好涵蓋各班需求
+    function pickHome(rng) {
+      const home = staff.map(() => null);
+      const need = {};
+      targetCodes.forEach(c => { need[c] = 0; for (let d = 0; d < dim; d++) need[c] += target(c, d); });
+      staff.forEach(s => { if (s.counted && s.prefer.length) s.prefer.forEach(c => { need[c] -= workTarget / s.prefer.length; }); });
+      const order = staff.map((s, i) => i).filter(i => ctx.kindMax[i] > 0 && staff[i].counted && !staff[i].prefer.length);
+      for (let k = order.length - 1; k > 0; k--) { const j = (rng() * (k + 1)) | 0; [order[k], order[j]] = [order[j], order[k]]; }
+      for (const i of order) {
+        const codes = staff[i].autoCodes.slice().sort((a, b) => (need[b] - need[a]) || (rng() - 0.5)).slice(0, ctx.kindMax[i]);
+        home[i] = new Set(codes);
+        const tot = codes.reduce((a, c) => a + Math.max(1, need[c]), 0);
+        codes.forEach(c => { need[c] -= workTarget * Math.max(1, need[c]) / tot; });
+      }
+      return home;
+    }
+
     // 起始班表：逐日把各班補到目標人數，優先挑「還欠最多班」、能接班、又是主要班別的人
     function initial(rng) {
+      const home = pickHome(rng);
       const g = staff.map((s, i) => fixed[i].map(v => v === null ? OFF : v));
       const worked = new Array(n).fill(0), streak = new Array(n).fill(0);
       staff.forEach((s, i) => { for (const c of ctx.prev[s.id]) streak[i] = ctx.isWork(c) ? streak[i] + 1 : 0; });
@@ -510,7 +557,7 @@
               const prevC = d === 0 ? ctx.prev[s.id][ctx.prev[s.id].length - 1] : g[i][d - 1];
               if (!restOk(prevC, code)) continue;
               const sc = (workTarget - worked[i]) / Math.max(1, dim - d) * 10 + (prevC === code ? 1.5 : 0)
-                + (s.prefer.length ? (s.preferSet.has(code) ? 3 : -3) : 0) + rng() * 1.5;
+                + (s.prefer.length ? (s.preferSet.has(code) ? 3 : -3) : home[i] ? (home[i].has(code) ? 3 : -4) : 0) + rng() * 1.5;
               if (sc > bestScore) { bestScore = sc; best = i; }
             }
             if (best < 0) break;

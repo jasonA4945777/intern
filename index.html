@@ -255,7 +255,7 @@ const S = {
 };
 function defaultCfg() {
   return { facility: (SEED && SEED.facility) || '護理之家', groups: clone(E.DEFAULT_GROUPS), shifts: clone(E.DEFAULT_SHIFTS),
-    rules: clone(E.DEFAULT_RULES).concat(SEED ? clone(SEED.rules || []) : []), leave: { max: 0, lockDay: 10 }, holidays: {}, adminHash: '' };
+    rules: clone(E.DEFAULT_RULES).concat(SEED ? clone(SEED.rules || []) : []), leave: { max: 0, lockDay: 10 }, holidays: {}, adminHash: '', ruleVer: 2 };
 }
 const emptyMonth = () => ({ cells: {}, locks: {}, prev: {}, savedAt: null, published: null });
 const workShifts = g => S.cfg.shifts.filter(s => s.kind === 'work' && (!g || !s.group || s.group === g));
@@ -266,7 +266,9 @@ const activeStaff = g => S.staff.filter(s => s.active !== false && (!g || g === 
 const dim = () => E.daysInMonth(S.y, S.m);
 
 async function loadAll() {
-  S.cfg = Object.assign(defaultCfg(), await Store.get('config') || {});
+  const stored = await Store.get('config');
+  S.cfg = Object.assign(defaultCfg(), stored || {});
+  if (stored && !stored.ruleVer) S.cfg.ruleVer = 1;        // 舊設定：下面會補上新規則
   let staff = await Store.get('staff');
   if (!staff && SEED) {
     // 第一次開啟：載入機構人員名單與既有班表
@@ -280,6 +282,18 @@ async function loadAll() {
     await Store.set('config', S.cfg);
   }
   S.staff = staff || [];
+  // 規則版本升級：補上後來才有的預設規則
+  if ((S.cfg.ruleVer || 1) < 2) {
+    // 之前用「每日班別人數」建、但沒選班別也沒填人數的規則沒有作用；名稱在講班別種類的，直接轉成新類型
+    const stub = S.cfg.rules.find(r => r.type === 'codeCount' && !(r.params.codes || []).length && /種班別/.test(r.name || ''));
+    if (stub) { stub.type = 'maxKinds'; stub.hard = false; stub.weight = +stub.weight || 6; stub.params = { group: 'all', max: 2 }; }
+    else if (!S.cfg.rules.some(r => r.type === 'maxKinds')) {
+      const def = E.DEFAULT_RULES.find(r => r.id === 'max-kinds'), at = S.cfg.rules.findIndex(r => r.type === 'preferShift');
+      S.cfg.rules.splice(at < 0 ? S.cfg.rules.length : at, 0, clone(def));
+    }
+    S.cfg.ruleVer = 2;
+    await Store.set('config', S.cfg);
+  }
 }
 async function loadMonth() {
   const k = ymKey(S.y, S.m);
@@ -304,7 +318,7 @@ function mkCtx(group, rules) {
     locks[id] = {};
     Object.keys(S.month.locks[id]).forEach(d => { const c = (S.month.cells[id] || [])[d]; if (c) locks[id][d] = c; });
   });
-  return E.buildContext({ year: S.y, month: S.m, staff: activeStaff(group), shifts: S.cfg.shifts, groups: S.cfg.groups, rules: rules || S.cfg.rules,
+  return E.buildContext({ year: S.y, month: S.m, staff: activeStaff(group), shifts: S.cfg.shifts, groups: S.cfg.groups, rules: rules || S.cfg.rules, kindRules: S.cfg.rules,
     requests: S.requests, locks, prevTail: effectiveTail(), holidays: S.cfg.holidays });
 }
 
@@ -329,7 +343,7 @@ function scoreBreakdown() {
       if (extra && extraW) rows.push({ name: r.name + '：多休', hard: false, weight: extraW, cost: extra * extraW, note: `多休 ${extra} 天` });
       return;
     }
-    rows.push({ name: r.name, hard, weight: r.weight, cost, fair: /^fair/.test(r.type) });
+    rows.push({ name: r.name, hard, weight: r.weight, cost, fair: /^fair/.test(r.type), kinds: r.type === 'maxKinds' });
   });
   if (total - sum > 0.05) rows.push({ name: '基本檢查（空白格、排到不能上的班別或停用的班別）', hard: true, cost: total - sum });
   rows.sort((a, b) => b.cost - a.cost);
@@ -341,7 +355,7 @@ function scoreCard() {
   const num = 'style="text-align:right;font-variant-numeric:tabular-nums"';
   const line = x => {
     const w = x.hard ? E.HARD : +x.weight || 0, units = w ? x.cost / w : 0;
-    const what = x.note || (x.fair ? '每人與平均的差，平方後加總' : x.hard ? '違反次數' : '發生次數');
+    const what = x.note || (x.kinds ? '超出種類上限的班數（每人最常上的幾種不算）' : x.fair ? '每人與平均的差，平方後加總' : x.hard ? '違反次數' : '發生次數');
     return `<tr><td>${esc(x.name)}</td><td>${x.hard ? '<span class="chip bad">一定要</span>' : '<span class="chip warn">盡量</span>'}</td>
       <td ${num}>${fmtScore(w)}</td><td ${num}>× ${fmtScore(units)}</td><td ${num}>＝ <b>${fmtScore(x.cost)}</b></td><td class="mute small">${esc(what)}</td></tr>`;
   };
@@ -716,7 +730,7 @@ function rulesPage() {
       <tr><td>平均類<br><span class="mute small">上班天數、班別次數、假日休假</span></td><td>把同一組每個人的數字和全組平均相減、平方、加總，再乘上扣分數：<br><code>扣分數 × Σ（個人 − 平均）²</code><br>用平方是為了讓「一個人差很多」比「大家都差一點」扣得重。</td><td class="mute">5 人大夜次數 6、6、5、7、7，平均 6.2，差的平方和是 2.8。扣分數 2 → 扣 5.6。<br>若是 4、5、6、8、8，平方和 12.8 → 扣 25.6。</td></tr>
       <tr><td>每月休假天數</td><td>少休一天：照「一定要／盡量」扣。<br>多休一天：扣「多休一天的扣分」，預設很低，因為人力有餘時多休是正常的。</td><td class="mute">應休 11 天只排 10 天 → 扣 ${E.HARD}。排了 13 天、多休扣分 5 → 扣 10。</td></tr>
     </tbody></table>
-    <p><b>「一次」怎麼算：</b>人數類是差幾個人算幾次；連班上限是超過的每一天算一次（上限 6 天卻連 8 天 → 2 次）；輪班間隔、預假被排班、換班、只上一天班，每發生一次算一次；主要班別是每排到一個非主要班別算一次。</p>
+    <p><b>「一次」怎麼算：</b>人數類是差幾個人算幾次；連班上限是超過的每一天算一次（上限 6 天卻連 8 天 → 2 次）；輪班間隔、預假被排班、換班、只上一天班，每發生一次算一次；主要班別是每排到一個非主要班別算一次；班別種類上限是超出的那幾種班別、每上一班算一次（上限 2 種、某人上了 D 10、E 8、N 2 → 2 次）。</p>
     <p><b>扣分數怎麼調：</b>數字只有相對大小有意義。想讓系統更重視某件事，就把它的扣分調得比其他高。「一定要」固定 ${E.HARD} 分，遠高於任何「盡量」的規則，所以系統一定先滿足「一定要」，剩下的空間才用來減少「盡量」的扣分。把扣分設成 0 等於不管這條。</p>
     <p><b>同樣條件每次排出來都一樣：</b>系統用固定的亂數從 3 個不同起點各試數十萬次小調整（改一格、或同一天兩人對調），分數變低就保留。按「換一份」會換一組亂數，可能找到分數相近但長相不同的班表。實際每條規則扣了多少，在班表頁最下面的「分數計算」，班表上方的「總分」可以直接跳過去。</p></details>`;
   return `${explain}<div class="card"><h3>班別</h3>

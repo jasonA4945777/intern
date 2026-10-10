@@ -82,5 +82,27 @@ console.log('5. 休假標記');
   ok(c('例') === 4 && c('休') === 5 && c('國') === 2, '10 月：例 4（週日數）、休 5（週六數）、國 2（10/9、10/26）');
 }
 
+console.log('6. 每人每月班別種類上限');
+{
+  const nurses = SEED.staff.filter(s => s.group === 'nurse');
+  const kindsOf = (rs, w) => {
+    const r2 = rs.map(r => (r.id === 'max-kinds' ? Object.assign({}, r, { enabled: w > 0, weight: w }) : r));
+    const ctx = E.buildContext({ year: 2026, month: 10, staff: nurses, rules: r2, prevTail: tail });
+    const { result } = E.solve(ctx, { seed: 1 });
+    const three = ctx.staff.filter(s => s.counted && Object.keys(result.stats[s.id].cnt).length > 2);
+    const over = three.reduce((a, s) => { const v = Object.values(result.stats[s.id].cnt).sort((x, y) => y - x); return a + v.slice(2).reduce((p, q) => p + q, 0); }, 0);
+    return { three: three.length, over, hard: result.hard.filter(v => !/D8|N8/.test(v.msg)).length };   // 這裡只排護理，照服人數規則不算
+  };
+  const off = kindsOf(rules(), 0), on = kindsOf(rules(), 6);
+  console.log(`    關閉：${off.three} 人上 3 種、超出 ${off.over} 班；開啟（扣分 6）：${on.three} 人上 3 種、超出 ${on.over} 班`);
+  ok(on.over < off.over, '開啟後超出的班數變少');
+  ok(on.hard === 0, '開啟後仍沒有硬性違規');
+  const ctx = E.buildContext({ year: 2026, month: 10, staff: nurses, rules: rules() });
+  const cells = {}; nurses.forEach(s => { cells[s.id] = new Array(31).fill('休'); });
+  for (let d = 0; d < 10; d++) cells.n02[d] = 'D'; for (let d = 12; d < 20; d++) cells.n02[d] = 'E'; cells.n02[22] = 'N'; cells.n02[23] = 'N';
+  const r = E.validate(ctx, cells).soft.find(v => /種班別/.test(v.msg));
+  ok(r && /黃珮榛 本月上了 3 種班別（D 10、E 8、N 2），超過 2 種/.test(r.msg), '訊息：' + (r && r.msg));
+}
+
 console.log(fails ? `\n${fails} 項失敗` : '\n全部通過');
 process.exit(fails ? 1 : 0);
