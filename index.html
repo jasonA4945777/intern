@@ -332,10 +332,18 @@ function scoreBreakdown() {
 const fmtScore = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 function scoreCard() {
   const { total, rows } = scoreBreakdown();
-  return `<details class="card score"><summary><b>分數明細</b>　全機構總分 <b>${fmtScore(total)}</b> 分<span class="mute small">　分數越低越好；自動排班就是在找總分最低的排法。點開看每條規則扣了多少</span></summary>
-    ${rows.length ? `<table class="list" style="margin-top:8px"><thead><tr><th>規則</th><th>類型</th><th style="text-align:right">扣分</th><th style="text-align:right">約等於</th></tr></thead><tbody>
-      ${rows.map(x => `<tr><td>${esc(x.name)}</td><td>${x.hard ? '<span class="chip bad">一定要</span>' : `<span class="chip warn">盡量 ×${esc(x.weight)}</span>`}</td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>${fmtScore(x.cost)}</b></td><td style="text-align:right" class="mute small">${x.note || (x.hard ? `違反 ${fmtScore(x.cost / E.HARD)} 次` : (+x.weight ? `${fmtScore(x.cost / x.weight)} ${x.fair ? '（差的平方和）' : '次'}` : ''))}</td></tr>`).join('')}
-    </tbody></table><div class="mute small" style="margin-top:6px">算法說明在「規則」頁最上面。</div>` : '<div class="mute small" style="margin-top:8px">沒有任何扣分。</div>'}</details>`;
+  const num = 'style="text-align:right;font-variant-numeric:tabular-nums"';
+  const line = x => {
+    const w = x.hard ? E.HARD : +x.weight || 0, units = w ? x.cost / w : 0;
+    const what = x.note || (x.fair ? '每人與平均的差，平方後加總' : x.hard ? '違反次數' : '發生次數');
+    return `<tr><td>${esc(x.name)}</td><td>${x.hard ? '<span class="chip bad">一定要</span>' : '<span class="chip warn">盡量</span>'}</td>
+      <td ${num}>${fmtScore(w)}</td><td ${num}>× ${fmtScore(units)}</td><td ${num}>＝ <b>${fmtScore(x.cost)}</b></td><td class="mute small">${esc(what)}</td></tr>`;
+  };
+  return `<details class="card score" id="scoreCard" open><summary><b>分數計算</b>　全機構總分 <b>${fmtScore(total)}</b> 分<span class="mute small">　越低越好；自動排班就是在找總分最低的排法</span></summary>
+    ${rows.length ? `<div style="overflow-x:auto"><table class="list" style="margin-top:8px"><thead><tr><th>規則</th><th>類型</th><th style="text-align:right">每次扣分</th><th style="text-align:right">次數</th><th style="text-align:right">扣分</th><th>次數怎麼來的</th></tr></thead><tbody>
+      ${rows.map(line).join('')}
+      <tr><td colspan="4" style="text-align:right;font-weight:700;border:0">總分</td><td style="text-align:right;font-variant-numeric:tabular-nums;border:0"><b>${fmtScore(total)}</b></td><td style="border:0"></td></tr>
+    </tbody></table></div><div class="mute small" style="margin-top:6px">每一列是「每次扣分 × 次數」，全部加起來就是總分。完整算法在「規則」頁最上面的「扣分怎麼算」。</div>` : '<div class="mute small" style="margin-top:8px">沒有任何扣分。</div>'}</details>`;
 }
 
 // ── 上月連班 ─────────────────────────────────────────────
@@ -541,6 +549,7 @@ function schedPage() {
     <div class="bar"><div class="chips">
       <span class="chip ${!hasCells ? '' : r.hard.length ? 'bad' : 'ok'}">${hasCells ? (r.hard.length ? `必須修正 ${r.hard.length}` : '沒有違規') : '尚未排班'}</span>
       ${hasCells && visible.length ? `<span class="chip warn">提醒 ${visible.length}</span>` : ''}
+      ${hasCells ? `<button class="chip" data-act="toScore" style="border:0;cursor:pointer" title="看每條規則扣了多少">總分 <b>${fmtScore(S.result.exact)}</b>　看計算 ↓</button>` : ''}
       ${S.dirty ? '<span class="chip warn">有修改尚未存檔（只在這台裝置）</span>' : S.month.savedAt ? `<span class="chip">上次存檔 ${fmtTime(S.month.savedAt)}</span>` : ''}
       ${pub ? `<span class="chip">${changed ? '發布後有修改，同仁看到的還是舊版' : '同仁已可看到這份班表'}</span>` : '<span class="chip">尚未發布，同仁看不到</span>'}
       <span class="chip"><span class="key"></span>預假</span>
@@ -693,7 +702,7 @@ function rulesPage() {
     </tbody></table>
     <p><b>「一次」怎麼算：</b>人數類是差幾個人算幾次；連班上限是超過的每一天算一次（上限 6 天卻連 8 天 → 2 次）；輪班間隔、預假被排班、換班、只上一天班，每發生一次算一次；主要班別是每排到一個非主要班別算一次。</p>
     <p><b>扣分數怎麼調：</b>數字只有相對大小有意義。想讓系統更重視某件事，就把它的扣分調得比其他高。「一定要」固定 ${E.HARD} 分，遠高於任何「盡量」的規則，所以系統一定先滿足「一定要」，剩下的空間才用來減少「盡量」的扣分。把扣分設成 0 等於不管這條。</p>
-    <p><b>同樣條件每次排出來都一樣：</b>系統用固定的亂數從 3 個不同起點各試數十萬次小調整（改一格、或同一天兩人對調），分數變低就保留。按「換一份」會換一組亂數，可能找到分數相近但長相不同的班表。實際每條規則扣了多少，在班表頁最下面的「分數明細」。</p></details>`;
+    <p><b>同樣條件每次排出來都一樣：</b>系統用固定的亂數從 3 個不同起點各試數十萬次小調整（改一格、或同一天兩人對調），分數變低就保留。按「換一份」會換一組亂數，可能找到分數相近但長相不同的班表。實際每條規則扣了多少，在班表頁最下面的「分數計算」，班表上方的「總分」可以直接跳過去。</p></details>`;
   return `${explain}<div class="card"><h3>班別</h3>
       <table class="list"><thead><tr><th>代碼</th><th>名稱</th><th>組別</th><th>時間（幾點到幾點）</th><th>啟用</th><th></th></tr></thead><tbody>${S.cfg.shifts.map(shiftRow).join('')}</tbody></table>
       <div class="bar" style="margin:10px 0 0"><input type="text" id="newShift" placeholder="新班別代碼，例如 D12" style="width:190px"><button class="btn" data-act="shiftAdd">新增班別</button>
@@ -832,6 +841,7 @@ const ACT = {
     if (!confirm('放棄未存檔的修改，回到上次存檔的內容？')) return;
     clearDraft(); await loadMonth(); render();
   },
+  toScore() { const el = $('#scoreCard'); if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
   prevOpen() { openPrev(); },
   prevAuto() { fillPrev(true); },
   prevSave() { savePrev(); },
