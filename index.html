@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>護理之家排班</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --line:#e3e6ec; --line2:#eef0f4;
+  --text:#1b2030; --mute:#6b7285; --accent:#2f5bd8; --accent-bg:#ecf1fe;
+  --bad:#c81e3a; --bad-bg:#fdecef; --warn:#a15c00; --warn-bg:#fff4dc; --ok:#12804a; --ok-bg:#e3f6ec;
+  --rest:#fafbfd; --r:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{margin:0;font-weight:700}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.btn.danger{color:var(--bad)} .btn.danger:hover{border-color:var(--bad)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+input[type=text],input[type=password],input[type=number],select,textarea{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;outline:none;min-width:0}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input[type=number]{width:74px}
+.mute{color:var(--mute)} .small{font-size:12.5px}
+
+/* 登入 */
+.login{min-height:100vh;display:grid;place-items:center;padding:16px}
+.login-box{width:360px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 24px}
+.login-box h1{font-size:20px;margin-bottom:2px}
+.login-box label{display:block;font-size:12.5px;color:var(--mute);margin:16px 0 5px}
+.login-box select,.login-box input{width:100%}
+.login-box .btn{width:100%;margin-top:10px}
+.or{text-align:center;color:var(--mute);font-size:12px;margin:18px 0 0}
+.notice{border-radius:8px;padding:9px 12px;font-size:13px;margin-top:12px}
+.notice.open{background:var(--accent-bg);color:var(--accent)} .notice.closed{background:var(--warn-bg);color:var(--warn)}
+
+/* 外框 */
+header{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 16px;height:52px}
+header .brand{font-weight:700;white-space:nowrap}
+.tabs{display:flex;gap:2px;flex:1;overflow-x:auto}
+.tab{border:0;background:none;padding:15px 12px;font-weight:600;color:var(--mute);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.who{font-size:13px;color:var(--mute);white-space:nowrap}
+main{padding:16px;max-width:1500px;margin:0 auto}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.bar .sp{flex:1}
+.month{display:flex;align-items:center;gap:4px;font-weight:700;font-size:16px}
+.month .btn{padding:4px 10px}
+.month span{min-width:104px;text-align:center}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:12px}
+.card h3{font-size:14px;margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:600;background:var(--line2);color:var(--mute)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)} .chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.ok{background:var(--ok-bg);color:var(--ok)}
+.cap{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px}
+.cap .card{margin:0}
+.cap b{font-size:15px}
+
+/* 班表 */
+.grid-wrap{overflow:auto;max-height:calc(100vh - 210px);background:var(--card);border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px}
+table.grid{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:100%}
+.grid th,.grid td{border-right:1px solid var(--line2);border-bottom:1px solid var(--line2);text-align:center;padding:0;height:30px;min-width:31px}
+.grid thead th{position:sticky;top:0;z-index:3;background:#fff;font-weight:600;height:24px}
+.grid thead tr:nth-child(2) th{top:24px;border-bottom:1px solid var(--line)}
+.grid .name{position:sticky;left:0;z-index:2;background:#fff;text-align:left;padding:0 10px;min-width:104px;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;border-right:1px solid var(--line)}
+.grid thead .name{z-index:4}
+.grid .rest{background:var(--rest);color:var(--bad)}
+.grid td.c{cursor:pointer;font-weight:700;position:relative}
+.grid td.c:hover{outline:2px solid var(--accent);outline-offset:-2px;z-index:1}
+.grid td.ro{cursor:default} .grid td.ro:hover{outline:none}
+.grid td.vh{box-shadow:inset 0 0 0 2px var(--bad)}
+.grid td.vs{box-shadow:inset 0 -3px 0 #e2a000}
+.grid td.lock::after{content:"";position:absolute;right:2px;top:2px;width:5px;height:5px;border-radius:50%;background:#1b2030}
+.grid td.req::before{content:"假";position:absolute;left:1px;top:-1px;font-size:8px;font-weight:700;color:var(--bad)}
+.grid td.stat{color:var(--mute);min-width:34px;font-variant-numeric:tabular-nums}
+.grid th.stat{color:var(--mute);font-weight:500}
+.grid tr.cov td{background:#fbfcfe;color:var(--mute);font-variant-numeric:tabular-nums}
+.grid tr.cov td.name{background:#fbfcfe;font-weight:500}
+.grid tr.cov td.low{background:var(--bad-bg);color:var(--bad);font-weight:700}
+.grid tr.cov td.thin{background:var(--warn-bg);color:var(--warn);font-weight:700}
+.grid tr.me td.name{background:var(--accent-bg);color:var(--accent)}
+.grid tr.sep td{height:26px;background:var(--line2);text-align:left;padding:0 10px;font-weight:700;position:sticky;left:0}
+.tag{font-size:10.5px;font-weight:600;color:var(--mute);margin-left:4px}
+.viol{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.viol ul{margin:0;padding:0;list-style:none;max-height:260px;overflow:auto}
+.viol li{padding:5px 0;border-bottom:1px solid var(--line2);font-size:13px;cursor:pointer}
+.viol li:hover{color:var(--accent)}
+.viol li:last-child{border:0}
+
+/* 選班小視窗 */
+#pop{position:fixed;z-index:60;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 30px rgba(20,30,60,.18);padding:12px;width:232px;display:none}
+#pop .ttl{font-weight:700;margin-bottom:8px}
+#pop .opts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#pop .o{border:1px solid transparent;border-radius:7px;padding:6px 0;font-weight:700;cursor:pointer;text-align:center}
+#pop .o.cur{border-color:#1b2030}
+#pop .o.dim{opacity:.35}
+#pop label{display:flex;gap:6px;align-items:center;font-size:12.5px;margin-top:10px;cursor:pointer}
+#pop .foot{display:flex;gap:6px;margin-top:10px}
+
+/* 預假月曆 */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;max-width:560px}
+.cal .h{text-align:center;font-size:12px;color:var(--mute);padding:4px 0}
+.cal .d{min-height:52px;padding:4px 0;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:16px;position:relative}
+.cal .d small{font-size:10px;font-weight:500;color:var(--mute);max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-height:15px}
+.cal .d.rest{color:var(--bad)}
+.cal .d.sel{background:var(--bad);border-color:var(--bad);color:#fff} .cal .d.sel small{color:#ffd9df}
+.cal .d.off{cursor:default;opacity:.55}
+
+/* 人員、規則 */
+table.list{width:100%;border-collapse:collapse}
+.list th{text-align:left;font-size:12px;color:var(--mute);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.list td{padding:6px 8px;border-bottom:1px solid var(--line2);vertical-align:middle}
+.list tr.inactive td{opacity:.5}
+.pick{display:inline-flex;flex-wrap:wrap;gap:4px}
+.pick button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 8px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--mute)}
+.pick button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rule{display:grid;grid-template-columns:auto 1fr auto;gap:10px 12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line2)}
+.rule:last-child{border:0}
+.rule.off .body{opacity:.5}
+.rule input.rname{width:100%;font-weight:600;border-color:transparent;padding-left:0;background:none}
+.rule input.rname:hover,.rule input.rname:focus{border-color:var(--line);padding-left:10px;background:#fff}
+.rule .params{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px;align-items:center}
+.rule .params label{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mute)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:5px 10px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--mute)}
+.seg button.on{background:var(--text);color:#fff}
+.sw{position:relative;width:36px;height:20px;border-radius:999px;background:#cfd4de;border:0;cursor:pointer;margin-top:6px;flex:none}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.sw.on{background:var(--ok)} .sw.on::after{left:18px}
+.form{display:grid;grid-template-columns:140px 1fr;gap:10px 14px;align-items:center;max-width:640px}
+.form textarea{width:100%;min-height:90px}
+
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b2030;color:#fff;border-radius:999px;padding:9px 18px;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+#toast.show{opacity:1} #toast.err{background:var(--bad)}
+#busy{position:fixed;inset:0;background:rgba(246,247,249,.8);z-index:70;display:none;place-items:center;font-weight:700}
+#busy.show{display:grid}
+.empty{text-align:center;color:var(--mute);padding:40px 16px}
+@media (max-width:640px){main{padding:10px}.form{grid-template-columns:1fr}header{gap:8px;padding:0 10px}.who span{display:none}}
+@media print{header,.bar,.viol,.cap,#toast{display:none!important}.grid-wrap{max-height:none;overflow:visible;border:0}main{padding:0;max-width:none}body{background:#fff}.grid .name,.grid thead th{position:static}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="pop"></div>
+<div id="toast"></div>
+<div id="busy"><div id="busyText">處理中…</div></div>
+<input type="file" id="fileIn" accept=".json" hidden>
+
+<script src="engine.js"></script>
+<script src="seed.js"></script>
+<script type="module">
+/* ============================================================
+ * 護理之家排班系統 — 介面與資料層
+ * 排班規則與演算法都在 engine.js；這個檔案只負責畫面、存取資料。
+ * ============================================================ */
+
+// 填入 Firebase 專案設定後，資料會改存 Firestore、跨裝置同步；留 null 則只存在這台瀏覽器。
+const FIREBASE_CONFIG = null;
+const FS_COLLECTION = 'nhSchedule';
+
+const E = window.NHEngine, SEED = window.NH_SEED || null;
+const $ = s => document.querySelector(s);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clone = v => JSON.parse(JSON.stringify(v));
+const pad = n => String(n).padStart(2, '0');
+const ymKey = (y, m) => `${y}_${m}`;
+const uid = p => p + Math.random().toString(36).slice(2, 8);
+const tick = () => new Promise(r => setTimeout(r, 30));
+
+// ── 資料層：兩種儲存方式介面相同 ─────────────────────────
+const LocalStore = {
+  mode: 'local',
+  async get(k) { try { const v = localStorage.getItem('nhs:' + k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
+  async set(k, v) { localStorage.setItem('nhs:' + k, JSON.stringify(v)); },
+  async del(k) { localStorage.removeItem('nhs:' + k); },
+  async list(prefix) {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.startsWith('nhs:' + prefix)) { try { out[k.slice(4)] = JSON.parse(localStorage.getItem(k)); } catch (e) {} }
+    }
+    return out;
+  },
+};
+let Store = LocalStore;
+async function initStore() {
+  if (!FIREBASE_CONFIG) return;
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js');
+    const fs = await import('https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js');
+    const db = fs.getFirestore(initializeApp(FIREBASE_CONFIG));
+    const ref = k => fs.doc(db, FS_COLLECTION, k);
+    Store = {
+      mode: 'cloud',
+      async get(k) { const s = await fs.getDoc(ref(k)); return s.exists() ? JSON.parse(s.data().json) : null; },
+      async set(k, v) { await fs.setDoc(ref(k), { json: JSON.stringify(v), at: new Date().toISOString() }); },
+      async del(k) { await fs.deleteDoc(ref(k)); },
+      async list(prefix) {
+        const q = fs.query(fs.collection(db, FS_COLLECTION), fs.where(fs.documentId(), '>=', prefix), fs.where(fs.documentId(), '<', prefix + ''));
+        const out = {};
+        (await fs.getDocs(q)).forEach(d => { out[d.id] = JSON.parse(d.data().json); });
+        return out;
+      },
+    };
+  } catch (e) {
+    console.error(e);
+    toast('連不上雲端資料庫，暫時改存在這台裝置', true);
+  }
+}
+
+// ── 狀態 ─────────────────────────────────────────────────
+const S = {
+  cfg: null, staff: [], user: null, tab: 'sched',
+  y: 0, m: 0, month: null, requests: {}, lock: null, prevTail: {},
+  result: null, undo: [], group: 'all', leaveMode: false, seed: 1, focus: null,
+};
+function defaultCfg() {
+  return { facility: (SEED && SEED.facility) || '護理之家', groups: clone(E.DEFAULT_GROUPS), shifts: clone(E.DEFAULT_SHIFTS),
+    rules: clone(E.DEFAULT_RULES).concat(SEED ? clone(SEED.rules || []) : []), leave: { max: 0, lockDay: 10 }, holidays: {}, adminHash: '' };
+}
+const emptyMonth = () => ({ cells: {}, locks: {}, savedAt: null, published: null });
+const workShifts = g => S.cfg.shifts.filter(s => s.kind === 'work' && (!g || !s.group || s.group === g));
+const offShifts = () => S.cfg.shifts.filter(s => s.kind === 'off' && s.enabled !== false);
+const shiftOf = c => S.cfg.shifts.find(s => s.code === c);
+const groupName = id => (S.cfg.groups.find(g => g.id === id) || {}).name || id;
+const activeStaff = g => S.staff.filter(s => s.active !== false && (!g || g === 'all' || s.group === g));
+const dim = () => E.daysInMonth(S.y, S.m);
+
+async function loadAll() {
+  S.cfg = Object.assign(defaultCfg(), await Store.get('config') || {});
+  let staff = await Store.get('staff');
+  if (!staff && SEED) {
+    // 第一次開啟：載入機構人員名單與既有班表
+    staff = clone(SEED.staff);
+    await Store.set('staff', staff);
+    for (const k of Object.keys(SEED.months || {})) {
+      const mo = SEED.months[k];
+      await Store.set('sched_' + k, { cells: mo.cells, locks: {}, savedAt: new Date().toISOString(), published: { cells: mo.cells, at: new Date().toISOString() }, imported: true });
+      for (const id of Object.keys(mo.requests || {})) await Store.set(`req_${k}_${id}`, { days: mo.requests[id] });
+    }
+    await Store.set('config', S.cfg);
+  }
+  S.staff = staff || [];
+}
+async function loadMonth() {
+  const k = ymKey(S.y, S.m);
+  S.month = Object.assign(emptyMonth(), await Store.get('sched_' + k) || {});
+  const reqs = await Store.list(`req_${k}_`);
+  S.requests = {};
+  Object.keys(reqs).forEach(key => { S.requests[key.slice(`req_${k}_`.length)] = reqs[key].days || []; });
+  S.lock = await Store.get('lock_' + k);
+  const py = S.m === 1 ? S.y - 1 : S.y, pm = S.m === 1 ? 12 : S.m - 1;
+  const prev = await Store.get('sched_' + ymKey(py, pm));
+  S.prevTail = {};
+  if (prev && prev.cells) Object.keys(prev.cells).forEach(id => { S.prevTail[id] = prev.cells[id].slice(-7); });
+  S.undo = []; S.focus = null;
+  check();
+}
+function mkCtx(group) {
+  const locks = {};
+  Object.keys(S.month.locks || {}).forEach(id => {
+    locks[id] = {};
+    Object.keys(S.month.locks[id]).forEach(d => { const c = (S.month.cells[id] || [])[d]; if (c) locks[id][d] = c; });
+  });
+  return E.buildContext({ year: S.y, month: S.m, staff: activeStaff(group), shifts: S.cfg.shifts, groups: S.cfg.groups, rules: S.cfg.rules,
+    requests: S.requests, locks, prevTail: S.prevTail, holidays: S.cfg.holidays });
+}
+function check() { S.ctx = mkCtx(); S.result = E.validate(S.ctx, S.month.cells); }
+let saveTimer = null;
+function saveMonthSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    S.month.savedAt = new Date().toISOString();
+    try { await Store.set('sched_' + ymKey(S.y, S.m), S.month); } catch (e) { toast('儲存失敗：' + e.message, true); }
+  }, 500);
+}
+const saveCfg = () => Store.set('config', S.cfg).catch(e => toast('儲存失敗：' + e.message, true));
+const saveStaff = () => Store.set('staff', S.staff).catch(e => toast('儲存失敗：' + e.message, true));
+
+// ── 預假截止 ─────────────────────────────────────────────
+function leaveState(y, m) {
+  const day = S.cfg.leave.lockDay || 10;
+  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+  const deadline = new Date(py, pm - 1, day, 23, 59, 59);
+  const manual = S.lock && typeof S.lock.locked === 'boolean' ? S.lock.locked : null;
+  const byDate = Date.now() > deadline.getTime();
+  return { locked: manual == null ? byDate : manual, manual, byDate, text: `${pm} 月 ${day} 日` };
+}
+
+// ── 小工具 ───────────────────────────────────────────────
+let toastTimer;
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = ''; }, err ? 4200 : 2200);
+}
+function busy(msg) { $('#busyText').textContent = msg || '處理中…'; $('#busy').classList.toggle('show', !!msg); }
+async function sha(text) {
+  if (crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nhs|' + text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  let h = 5381; for (const ch of 'nhs|' + text) h = (h * 33) ^ ch.charCodeAt(0);
+  return 'x' + (h >>> 0).toString(16);
+}
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: type || 'application/json' }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function pushUndo() {
+  S.undo.push(JSON.stringify({ cells: S.month.cells, locks: S.month.locks }));
+  if (S.undo.length > 30) S.undo.shift();
+}
+
+// ============================================================
+// 畫面
+// ============================================================
+function render() {
+  const keep = document.querySelector('.grid-wrap');
+  const scroll = keep ? [keep.scrollLeft, keep.scrollTop] : null;
+  closePop();
+  $('#app').innerHTML = S.user ? appHtml() : loginHtml();
+  const now = document.querySelector('.grid-wrap');
+  if (now && scroll) { now.scrollLeft = scroll[0]; now.scrollTop = scroll[1]; }
+}
+
+function loginHtml() {
+  const next = new Date(); next.setMonth(next.getMonth() + 1, 1);
+  const st = leaveState(next.getFullYear(), next.getMonth() + 1);
+  const first = !S.cfg.adminHash;
+  return `<div class="login"><div class="login-box">
+    <h1>${esc(S.cfg.facility)}</h1><div class="mute">排班系統</div>
+    <div class="notice ${st.locked ? 'closed' : 'open'}">${next.getMonth() + 1} 月預假${st.locked ? '已截止，要補登請找主管' : `請在 ${st.text}前登記`}</div>
+    <label>同仁登入</label>
+    <select id="loginName"><option value="">請選擇姓名</option>${S.cfg.groups.map(g => `<optgroup label="${esc(g.name)}">${activeStaff(g.id).map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+    <button class="btn primary" data-act="login">登入</button>
+    <div class="or">— 或 —</div>
+    <label>${first ? '第一次使用：請設定管理密碼' : '主管登入'}</label>
+    <input type="password" id="adminPwd" placeholder="${first ? '設定一組管理密碼（至少 4 碼）' : '管理密碼'}">
+    <button class="btn" data-act="adminLogin">${first ? '設定並進入' : '主管登入'}</button>
+  </div></div>`;
+}
+
+function appHtml() {
+  const admin = S.user.admin;
+  const tabs = admin ? [['sched', '班表'], ['staff', '人員'], ['rules', '規則'], ['settings', '設定']] : [['leave', '我的預假'], ['view', '班表']];
+  const page = { sched: schedPage, staff: staffPage, rules: rulesPage, settings: settingsPage, leave: leavePage, view: viewPage }[S.tab];
+  return `<header><div class="brand">${esc(S.cfg.facility)}</div>
+    <div class="tabs">${tabs.map(t => `<button class="tab ${S.tab === t[0] ? 'on' : ''}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div>
+    <div class="who"><span>${admin ? '主管' : esc(S.user.name)}　</span><button class="btn sm" data-act="logout">登出</button></div></header>
+    <main>${page()}</main>`;
+}
+const monthNav = () => `<div class="month"><button class="btn" data-act="month" data-d="-1" aria-label="上個月">‹</button><span>${S.y - 1911} 年 ${S.m} 月</span><button class="btn" data-act="month" data-d="1" aria-label="下個月">›</button></div>`;
+const groupSeg = () => `<div class="seg">${[['all', '全部']].concat(S.cfg.groups.map(g => [g.id, g.name])).map(g => `<button class="${S.group === g[0] ? 'on' : ''}" data-act="group" data-g="${g[0]}">${esc(g[1])}</button>`).join('')}</div>`;
+
+// ── 班表（主管）──────────────────────────────────────────
+function schedPage() {
+  if (!S.staff.length) return `<div class="empty">還沒有人員，請先到「人員」頁新增。</div>`;
+  const r = S.result, pub = S.month.published;
+  const dirty = pub && JSON.stringify(pub.cells) !== JSON.stringify(S.month.cells);
+  const hasCells = Object.keys(S.month.cells).length > 0;
+  const visible = r.soft.filter(v => !v.quiet);
+  const st = leaveState(S.y, S.m);
+  const caps = E.capacity(S.ctx).filter(c => S.group === 'all' || c.id === S.group);
+  return `<div class="bar">${monthNav()}${groupSeg()}<div class="sp"></div>
+      <button class="btn ${S.leaveMode ? 'on' : ''}" data-act="leaveMode" title="開啟後，點格子是登記或取消預假">預假登記${S.leaveMode ? '中' : ''}</button>
+      <button class="btn" data-act="undo" ${S.undo.length ? '' : 'disabled'}>復原</button>
+      <button class="btn" data-act="clear">清空</button>
+      <button class="btn" data-act="export">匯出 Excel</button>
+      <button class="btn" data-act="solve" data-alt="1" title="用另一組亂數重排，鎖定格與預假不變" ${hasCells ? '' : 'disabled'}>換一份</button>
+      <button class="btn primary" data-act="solve">自動排班</button>
+      <button class="btn ${dirty || !pub ? 'primary' : ''}" data-act="publish" ${hasCells ? '' : 'disabled'}>${pub ? (dirty ? '重新發布' : '已發布') : '發布'}</button>
+    </div>
+    <div class="cap">${caps.map(c => {
+      const short = c.supply < c.need, thin = !short && c.supply < c.full;
+      return `<div class="card"><div class="mute small">${esc(c.name)}人力試算</div>
+        <b>${c.people} 人 × ${S.ctx.dim - c.quota} 天 ＝ ${c.supply} 人日</b>
+        <div class="small ${short ? '' : 'mute'}" style="${short ? 'color:var(--bad)' : thin ? 'color:var(--warn)' : ''}">最低需求 ${c.need}、排滿 ${c.full}。${short ? `少 ${c.need - c.supply} 人日，一定排不滿` : thin ? `排滿還差 ${c.full - c.supply} 人日，部分日子只能排到下限` : `多 ${c.supply - c.full} 人日，會變成額外休假`}</div></div>`;
+    }).join('')}
+      <div class="card"><div class="mute small">本月設定</div><b>每人應休 ${r.quota == null ? '—' : r.quota} 天</b>
+        <div class="small mute">預假${st.locked ? '已截止' : `開放中（${st.text}截止）`}
+          <button class="btn sm" data-act="lockToggle" style="margin-left:6px">${st.locked ? '重新開放' : '提前截止'}</button></div></div>
+    </div>
+    <div class="bar"><div class="chips">
+      <span class="chip ${r.hard.length ? 'bad' : 'ok'}">${hasCells ? (r.hard.length ? `必須修正 ${r.hard.length}` : '沒有違規') : '尚未排班'}</span>
+      ${visible.length ? `<span class="chip warn">提醒 ${visible.length}</span>` : ''}
+      ${pub ? `<span class="chip">${dirty ? '發布後有修改，同仁看到的還是舊版' : '同仁已可看到這份班表'}</span>` : '<span class="chip">尚未發布，同仁看不到</span>'}
+    </div></div>
+    ${gridHtml({ edit: true })}
+    ${hasCells ? `<div class="viol">
+      <div class="card"><h3 style="color:var(--bad)">必須修正（${r.hard.length}）</h3>${violList(r.hard)}</div>
+      <div class="card"><h3 style="color:var(--warn)">提醒（${visible.length}）</h3>${violList(visible)}</div></div>` : ''}`;
+}
+function violList(list) {
+  if (!list.length) return '<div class="mute small">沒有項目</div>';
+  return `<ul>${list.slice(0, 200).map(v => `<li data-act="focus" data-s="${esc(v.staff || '')}" data-d="${v.day == null ? '' : v.day}">${esc(v.msg)}</li>`).join('')}</ul>`;
+}
+
+function gridHtml({ edit, cells, mine }) {
+  const ctx = S.ctx, n = ctx.dim, src = cells || S.month.cells;
+  const vmap = {}, cmap = {};
+  if (edit) S.result.violations.forEach(v => {
+    if (v.quiet) return;
+    if (v.staff && v.day != null) { const k = v.staff + '_' + v.day; if (v.hard || !vmap[k]) vmap[k] = v.hard ? 'vh' : 'vs'; }
+    else if (v.codes && v.day != null) v.codes.forEach(c => { const k = c + '_' + v.day; if (v.hard || !cmap[k]) cmap[k] = v.hard ? 'low' : 'thin'; });
+  });
+  const groups = S.cfg.groups.filter(g => S.group === 'all' || g.id === S.group);
+  let head = '<tr><th class="name" rowspan="2">姓名</th>', head2 = '<tr>';
+  ctx.days.forEach(x => {
+    head += `<th class="${x.rest ? 'rest' : ''}" title="${esc(x.holidayName)}">${x.d + 1}</th>`;
+    head2 += `<th class="${x.rest ? 'rest' : ''}">${E.WD[x.wd]}</th>`;
+  });
+  head += '<th class="stat" rowspan="2">上班</th><th class="stat" rowspan="2">休假</th><th class="stat" rowspan="2">假日休</th></tr>';
+  let body = '';
+  groups.forEach(g => {
+    const people = activeStaff(g.id), codes = workShifts(g.id).filter(s => s.group === g.id && s.enabled !== false).map(s => s.code);
+    if (!people.length) return;
+    body += `<tr class="sep"><td colspan="${n + 4}">${esc(g.name)}（${people.length}）</td></tr>`;
+    people.forEach(p => {
+      const row = src[p.id] || [], st = edit ? S.result.stats[p.id] : null;
+      const reqs = new Set(S.requests[p.id] || []), locks = (S.month.locks || {})[p.id] || {};
+      body += `<tr class="${mine === p.id ? 'me' : ''}"><td class="name" title="${esc(p.name)}">${esc(p.name)}${p.counted === false ? '<span class="tag">不計</span>' : ''}${(p.prefer || []).length ? `<span class="tag">${esc(p.prefer.join('/'))}</span>` : ''}</td>`;
+      for (let d = 0; d < n; d++) {
+        const c = row[d] || '', sh = shiftOf(c);
+        const cls = ['c', edit ? '' : 'ro', vmap[p.id + '_' + d] || '', edit && locks[d] ? 'lock' : '', edit && reqs.has(d) ? 'req' : '', S.focus === p.id + '_' + d ? 'vh' : ''].filter(Boolean).join(' ');
+        const style = sh ? `background:${sh.bg};color:${sh.color}` : (ctx.days[d].rest ? 'background:var(--rest)' : '');
+        body += `<td class="${cls}" style="${style}" ${edit ? `data-act="cell" data-s="${esc(p.id)}" data-d="${d}"` : ''}>${esc(c)}</td>`;
+      }
+      const work = row.filter(c => { const s = shiftOf(c); return s && s.kind === 'work'; }).length;
+      const off = p.counted === false ? '' : n - work;
+      body += `<td class="stat">${work}</td><td class="stat" ${st && off !== '' && S.result.quota != null && off < S.result.quota ? 'style="color:var(--bad);font-weight:700"' : ''}>${off}</td><td class="stat">${st && p.counted !== false ? st.restOff : ''}</td></tr>`;
+    });
+    codes.forEach(code => {
+      body += `<tr class="cov"><td class="name">${esc(code)} 人數</td>`;
+      for (let d = 0; d < n; d++) {
+        const v = people.filter(p => p.counted !== false && (src[p.id] || [])[d] === code).length;
+        body += `<td class="${cmap[code + '_' + d] || ''}">${v || ''}</td>`;
+      }
+      body += '<td colspan="3"></td></tr>';
+    });
+  });
+  return `<div class="grid-wrap"><table class="grid"><thead>${head}${head2}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+// ── 同仁：預假、看班表 ───────────────────────────────────
+function leavePage() {
+  const st = leaveState(S.y, S.m), mine = new Set(S.requests[S.user.id] || []), max = +S.cfg.leave.max || 0;
+  const first = new Date(S.y, S.m - 1, 1).getDay();
+  let cal = E.WD.map(w => `<div class="h">${w}</div>`).join('') + '<div></div>'.repeat(first);
+  S.ctx.days.forEach(x => {
+    cal += `<button class="d ${x.rest ? 'rest' : ''} ${mine.has(x.d) ? 'sel' : ''} ${st.locked ? 'off' : ''}" data-act="myLeave" data-d="${x.d}">${x.d + 1}<small>${mine.has(x.d) ? '預假' : esc(x.holidayName)}</small></button>`;
+  });
+  return `<div class="bar">${monthNav()}</div>
+    <div class="card"><div class="notice ${st.locked ? 'closed' : 'open'}" style="margin:0 0 14px">${st.locked ? `${S.m} 月預假已截止，要補登請找主管。` : `點日期登記或取消預假，${st.text}截止。`}${max ? `每人每月最多 ${max} 天。` : ''}　已登記 <b>${mine.size}</b> 天</div>
+    <div class="cal">${cal}</div></div>`;
+}
+function viewPage() {
+  const pub = S.month.published;
+  return `<div class="bar">${monthNav()}${groupSeg()}</div>
+    ${pub ? gridHtml({ edit: false, cells: pub.cells, mine: S.user.id }) : `<div class="empty">${S.y - 1911} 年 ${S.m} 月的班表還沒發布。</div>`}`;
+}
+
+// ── 人員 ─────────────────────────────────────────────────
+function staffPage() {
+  const rows = g => S.staff.filter(s => s.group === g.id).map(s => {
+    const codes = workShifts(g.id).filter(x => x.group === g.id).map(x => x.code);
+    const allowed = s.allowed && s.allowed.length ? s.allowed : codes;
+    return `<tr class="${s.active === false ? 'inactive' : ''}">
+      <td><input type="text" value="${esc(s.name)}" data-chg="staffName" data-s="${esc(s.id)}" style="width:130px"></td>
+      <td><div class="pick">${codes.map(c => `<button class="${allowed.includes(c) ? 'on' : ''}" data-act="staffCode" data-k="allowed" data-s="${esc(s.id)}" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div></td>
+      <td><div class="pick">${codes.map(c => `<button class="${(s.prefer || []).includes(c) ? 'on' : ''}" data-act="staffCode" data-k="prefer" data-s="${esc(s.id)}" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div></td>
+      <td><button class="sw ${s.counted !== false ? 'on' : ''}" style="margin:0" data-act="staffFlag" data-k="counted" data-s="${esc(s.id)}" aria-label="計入人力"></button></td>
+      <td><button class="sw ${s.active !== false ? 'on' : ''}" style="margin:0" data-act="staffFlag" data-k="active" data-s="${esc(s.id)}" aria-label="在職"></button></td>
+      <td style="white-space:nowrap"><button class="btn sm" data-act="staffMove" data-s="${esc(s.id)}" data-d="-1" aria-label="上移">↑</button>
+        <button class="btn sm" data-act="staffMove" data-s="${esc(s.id)}" data-d="1" aria-label="下移">↓</button>
+        <button class="btn sm danger" data-act="staffDel" data-s="${esc(s.id)}">刪除</button></td></tr>`;
+  }).join('');
+  return S.cfg.groups.map(g => `<div class="card"><div class="bar" style="margin-bottom:6px"><h3 style="margin:0">${esc(g.name)}（${S.staff.filter(s => s.group === g.id && s.active !== false).length} 人）</h3><div class="sp"></div>
+      <input type="text" id="add_${g.id}" placeholder="姓名，可一次貼多位（空白或逗號分隔）" style="width:290px">
+      <button class="btn" data-act="staffAdd" data-g="${g.id}">新增</button></div>
+    <table class="list"><thead><tr><th>姓名</th><th>可上班別</th><th>主要班別</th><th>計入人力</th><th>在職</th><th></th></tr></thead><tbody>${rows(g) || '<tr><td colspan="6" class="mute">尚無人員</td></tr>'}</tbody></table></div>`).join('')
+    + `<div class="mute small">「主要班別」：自動排班會盡量讓他上這個班（目前的設定是從 9 月班表推出來的，八成以上都上同一班的人才會標）。「計入人力」關閉＝兼職或實習，不算進每日人數，只排「規則」頁設定的固定星期班別。</div>`;
+}
+
+// ── 規則 ─────────────────────────────────────────────────
+function fieldHtml(r, f) {
+  const v = (r.params || {})[f.k], at = `data-r="${esc(r.id)}" data-k="${f.k}"`;
+  const codes = S.cfg.shifts.filter(s => s.kind === 'work').map(s => s.code);
+  let ctl = '';
+  if (f.t === 'num') ctl = `<input type="number" value="${v == null ? '' : esc(v)}" data-chg="ruleNum" ${at} ${f.optional ? 'placeholder="不限"' : ''}>`;
+  else if (f.t === 'codes') ctl = `<span class="pick">${codes.map(c => `<button class="${(v || []).includes(c) ? 'on' : ''}" data-act="rulePick" ${at} data-v="${esc(c)}">${esc(c)}</button>`).join('')}</span>`;
+  else if (f.t === 'weekdays') ctl = `<span class="pick">${E.WD.map((w, i) => `<button class="${(v || []).includes(i) ? 'on' : ''}" data-act="rulePick" ${at} data-v="${i}" data-num="1">${w}</button>`).join('')}</span>`;
+  else if (f.t === 'bool') ctl = `<input type="checkbox" ${v ? 'checked' : ''} data-chg="ruleBool" ${at}>`;
+  else {
+    let opts = f.options || [];
+    if (f.t === 'code') opts = codes.map(c => [c, c]);
+    if (f.t === 'dayType') opts = [['all', '每天'], ['weekday', '平日'], ['holiday', '週末與國定假日']];
+    if (f.t === 'group') opts = [['all', '全部']].concat(S.cfg.groups.map(g => [g.id, g.name]));
+    if (f.t === 'staff') opts = [['', '請選擇']].concat(S.staff.map(s => [s.id, s.name]));
+    ctl = `<select data-chg="ruleSel" ${at}>${opts.map(o => `<option value="${esc(o[0])}" ${String(v == null ? (f.t === 'dayType' || f.t === 'group' ? 'all' : '') : v) === String(o[0]) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
+  }
+  return `<label>${esc(f.label)} ${ctl}</label>`;
+}
+function rulesPage() {
+  const T = E.RULE_TYPES;
+  const rule = r => {
+    const t = T[r.type]; if (!t) return '';
+    const hard = r.hard && !t.softOnly;
+    return `<div class="rule ${r.enabled ? '' : 'off'}">
+      <button class="sw ${r.enabled ? 'on' : ''}" data-act="ruleToggle" data-r="${esc(r.id)}" aria-label="啟用"></button>
+      <div class="body"><input class="rname" type="text" value="${esc(r.name)}" data-chg="ruleName" data-r="${esc(r.id)}">
+        <div class="mute small">${esc(t.name)}：${esc(t.desc)}</div>
+        ${t.fields.length ? `<div class="params">${t.fields.map(f => fieldHtml(r, f)).join('')}</div>` : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        ${t.softOnly ? '' : `<div class="seg"><button class="${hard ? 'on' : ''}" data-act="ruleHard" data-r="${esc(r.id)}" data-v="1">一定要</button><button class="${hard ? '' : 'on'}" data-act="ruleHard" data-r="${esc(r.id)}" data-v="0">盡量</button></div>`}
+        ${hard ? '' : `<label class="small mute">扣分 <input type="number" value="${esc(r.weight)}" data-chg="ruleWeight" data-r="${esc(r.id)}" style="width:64px"></label>`}
+        <button class="btn sm danger" data-act="ruleDel" data-r="${esc(r.id)}">刪除</button></div></div>`;
+  };
+  const shiftRow = s => `<tr><td><b style="background:${s.bg};color:${s.color};border-radius:6px;padding:2px 9px">${esc(s.code)}</b></td>
+    <td><input type="text" value="${esc(s.name)}" data-chg="shiftSet" data-c="${esc(s.code)}" data-k="name" style="width:110px"></td>
+    <td>${s.kind === 'work' ? `<select data-chg="shiftSet" data-c="${esc(s.code)}" data-k="group">${S.cfg.groups.map(g => `<option value="${g.id}" ${s.group === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select>` : '<span class="mute">休假</span>'}</td>
+    <td>${s.kind === 'work' ? `<input type="number" value="${esc(s.start)}" data-chg="shiftSet" data-c="${esc(s.code)}" data-k="start" data-num="1"> ～ <input type="number" value="${esc(s.end)}" data-chg="shiftSet" data-c="${esc(s.code)}" data-k="end" data-num="1">` : ''}</td>
+    <td><button class="sw ${s.enabled !== false ? 'on' : ''}" style="margin:0" data-act="shiftToggle" data-c="${esc(s.code)}" aria-label="啟用"></button></td>
+    <td>${s.custom ? `<button class="btn sm danger" data-act="shiftDel" data-c="${esc(s.code)}">刪除</button>` : ''}</td></tr>`;
+  const addable = Object.keys(T).filter(k => T[k].custom);
+  return `<div class="card"><h3>班別</h3>
+      <table class="list"><thead><tr><th>代碼</th><th>名稱</th><th>組別</th><th>時間（幾點到幾點）</th><th>啟用</th><th></th></tr></thead><tbody>${S.cfg.shifts.map(shiftRow).join('')}</tbody></table>
+      <div class="bar" style="margin:10px 0 0"><input type="text" id="newShift" placeholder="新班別代碼，例如 D12" style="width:190px"><button class="btn" data-act="shiftAdd">新增班別</button>
+        <span class="mute small">時間以掛班當天 0 點起算：跨到隔天早上 8 點寫 32。系統用這個算輪班間隔。</span></div></div>
+    <div class="card"><div class="bar" style="margin-bottom:0"><h3 style="margin:0">排班規則</h3><div class="sp"></div>
+        <select id="newRuleType">${addable.map(k => `<option value="${k}">${esc(T[k].name)}</option>`).join('')}</select>
+        <button class="btn" data-act="ruleAdd">新增規則</button><button class="btn" data-act="ruleReset">還原預設</button></div>
+      <div class="mute small" style="margin:6px 0 4px">「一定要」的規則違反就算排不成；「盡量」的規則違反一次扣一次分，分數越高越優先遵守。改完立即生效，回班表頁重排即可。</div>
+      ${S.cfg.rules.map(rule).join('')}</div>`;
+}
+
+// ── 設定 ─────────────────────────────────────────────────
+function settingsPage() {
+  const hol = Object.keys(S.cfg.holidays || {}).sort().map(k => (S.cfg.holidays[k] === null ? '-' + k : `${k} ${S.cfg.holidays[k]}`)).join('\n');
+  const built = Object.entries(E.holidaysFor(S.y, {})).map(([k, v]) => `${k.slice(5)} ${v}`).join('、');
+  return `<div class="card"><h3>基本設定</h3><div class="form">
+      <div>機構名稱</div><input type="text" value="${esc(S.cfg.facility)}" data-chg="cfgSet" data-k="facility">
+      <div>預假截止日</div><div>前一個月 <input type="number" value="${esc(S.cfg.leave.lockDay)}" data-chg="leaveSet" data-k="lockDay"> 日</div>
+      <div>每人每月預假上限</div><div><input type="number" value="${esc(S.cfg.leave.max)}" data-chg="leaveSet" data-k="max"> 天 <span class="mute small">0 ＝ 不限</span></div>
+      <div>假日增減</div><div><textarea data-chg="holidays" placeholder="一行一筆。新增：2026-10-26 光復節補假　取消內建假日：-2026-02-20">${esc(hol)}</textarea>
+        <div class="mute small">${S.y} 年內建假日：${esc(built)}</div></div>
+    </div></div>
+    <div class="card"><h3>管理密碼</h3><div class="bar" style="margin:0"><input type="password" id="newPwd" placeholder="新密碼（至少 4 碼）"><button class="btn" data-act="pwd">變更</button></div></div>
+    <div class="card"><h3>資料</h3>
+      <div class="mute small" style="margin-bottom:10px">${Store.mode === 'cloud' ? '資料存在雲端資料庫，各裝置同步。' : '資料目前只存在這台裝置的瀏覽器。要讓同仁用自己的手機登記預假，需在 index.html 開頭填入 Firebase 設定。'}</div>
+      <div class="bar" style="margin:0"><button class="btn" data-act="backup">匯出備份</button><button class="btn" data-act="restore">匯入備份</button></div></div>`;
+}
+
+// ============================================================
+// 動作
+// ============================================================
+const ruleById = id => S.cfg.rules.find(r => r.id === id);
+const staffById = id => S.staff.find(s => s.id === id);
+function afterRules() { saveCfg(); check(); render(); }
+
+const ACT = {
+  async login() {
+    const s = staffById($('#loginName').value);
+    if (!s) return toast('請選擇姓名', true);
+    S.user = { id: s.id, name: s.name }; S.tab = 'leave'; S.group = s.group;
+    sessionStorage.setItem('nhs_user', JSON.stringify(S.user));
+    const d = new Date(); d.setMonth(d.getMonth() + 1, 1); S.y = d.getFullYear(); S.m = d.getMonth() + 1;
+    await loadMonth(); render();
+  },
+  async adminLogin() {
+    const pwd = $('#adminPwd').value;
+    if (!S.cfg.adminHash) {
+      if (pwd.length < 4) return toast('密碼至少 4 碼', true);
+      S.cfg.adminHash = await sha(pwd); await saveCfg();
+    } else if (await sha(pwd) !== S.cfg.adminHash) return toast('密碼不對', true);
+    S.user = { admin: true }; S.tab = 'sched'; S.group = 'all';
+    sessionStorage.setItem('nhs_user', JSON.stringify(S.user));
+    render();
+  },
+  logout() { S.user = null; sessionStorage.removeItem('nhs_user'); render(); },
+  tab(el) { S.tab = el.dataset.tab; S.leaveMode = false; check(); render(); },
+  group(el) { S.group = el.dataset.g; render(); },
+  async month(el) {
+    const d = new Date(S.y, S.m - 1 + (+el.dataset.d), 1);
+    S.y = d.getFullYear(); S.m = d.getMonth() + 1;
+    await loadMonth(); render();
+  },
+  leaveMode() { S.leaveMode = !S.leaveMode; render(); if (S.leaveMode) toast('點格子登記或取消預假；再按一次「預假登記」結束'); },
+  async lockToggle() {
+    const st = leaveState(S.y, S.m);
+    S.lock = { locked: !st.locked, at: new Date().toISOString() };
+    await Store.set('lock_' + ymKey(S.y, S.m), S.lock); render();
+  },
+  focus(el) {
+    if (!el.dataset.s || el.dataset.d === '') return;
+    S.focus = el.dataset.s + '_' + el.dataset.d;
+    const p = staffById(el.dataset.s);
+    if (p && S.group !== 'all' && S.group !== p.group) S.group = p.group;
+    render();
+    const td = document.querySelector(`td[data-s="${CSS.escape(el.dataset.s)}"][data-d="${el.dataset.d}"]`);
+    if (td) td.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  },
+  async cell(el) {
+    const id = el.dataset.s, d = +el.dataset.d;
+    if (S.leaveMode) {
+      const set = new Set(S.requests[id] || []);
+      set.has(d) ? set.delete(d) : set.add(d);
+      S.requests[id] = [...set].sort((a, b) => a - b);
+      await Store.set(`req_${ymKey(S.y, S.m)}_${id}`, { days: S.requests[id], at: new Date().toISOString() });
+      check(); render(); return;
+    }
+    openPop(el, id, d);
+  },
+  pick(el) {
+    const { s: id, d, c } = el.dataset;
+    pushUndo();
+    const row = S.month.cells[id] || (S.month.cells[id] = new Array(dim()).fill(''));
+    while (row.length < dim()) row.push('');
+    row[+d] = c;
+    const lock = $('#popLock').checked;
+    S.month.locks = S.month.locks || {};
+    if (lock && c) (S.month.locks[id] = S.month.locks[id] || {})[d] = true;
+    else if (S.month.locks[id]) delete S.month.locks[id][d];
+    S.focus = null; saveMonthSoon(); check(); render();
+  },
+  popClose() { closePop(); },
+  undo() {
+    const last = S.undo.pop(); if (!last) return;
+    const o = JSON.parse(last); S.month.cells = o.cells; S.month.locks = o.locks;
+    saveMonthSoon(); check(); render();
+  },
+  clear() {
+    if (!confirm(`清空 ${S.m} 月${S.group === 'all' ? '' : groupName(S.group)}班表？鎖定的格子會保留。`)) return;
+    pushUndo();
+    activeStaff(S.group).forEach(p => {
+      const lk = (S.month.locks || {})[p.id] || {};
+      S.month.cells[p.id] = (S.month.cells[p.id] || new Array(dim()).fill('')).map((c, d) => (lk[d] ? c : ''));
+    });
+    saveMonthSoon(); check(); render();
+  },
+  async solve(el) {
+    if (el.dataset.alt) S.seed++;
+    pushUndo();
+    const groups = S.cfg.groups.filter(g => (S.group === 'all' || g.id === S.group) && activeStaff(g.id).length);
+    for (const g of groups) {
+      busy(`正在排${g.name}…`); await tick();
+      const ctx = mkCtx(g.id);
+      const out = E.solve(ctx, { seed: S.seed });
+      Object.assign(S.month.cells, out.cells);
+    }
+    busy(''); saveMonthSoon(); check(); render();
+    toast(S.result.hard.length ? `排好了，但還有 ${S.result.hard.length} 項必須修正，請看下方清單` : '排好了，沒有違規');
+  },
+  async publish() {
+    if (S.result.hard.length && !confirm(`還有 ${S.result.hard.length} 項必須修正，仍要發布嗎？`)) return;
+    S.month.published = { cells: clone(S.month.cells), at: new Date().toISOString() };
+    S.month.savedAt = S.month.published.at;
+    await Store.set('sched_' + ymKey(S.y, S.m), S.month); render(); toast('已發布，同仁現在看得到');
+  },
+  export() { exportExcel(); },
+
+  // 同仁預假
+  async myLeave(el) {
+    if (leaveState(S.y, S.m).locked) return toast('預假已截止，要補登請找主管', true);
+    const d = +el.dataset.d, set = new Set(S.requests[S.user.id] || []), max = +S.cfg.leave.max || 0;
+    if (set.has(d)) set.delete(d);
+    else { if (max && set.size >= max) return toast(`每人每月最多 ${max} 天`, true); set.add(d); }
+    S.requests[S.user.id] = [...set].sort((a, b) => a - b);
+    await Store.set(`req_${ymKey(S.y, S.m)}_${S.user.id}`, { days: S.requests[S.user.id], at: new Date().toISOString() });
+    render();
+  },
+
+  // 人員
+  staffAdd(el) {
+    const g = el.dataset.g, names = $('#add_' + g).value.split(/[\s,，、]+/).map(x => x.trim()).filter(Boolean);
+    if (!names.length) return toast('請輸入姓名', true);
+    const dup = names.filter(nm => S.staff.some(s => s.name === nm));
+    if (dup.length) return toast(`已經有同名的人：${dup.join('、')}`, true);
+    names.forEach(nm => S.staff.push({ id: uid(g[0]), name: nm, group: g }));
+    saveStaff(); check(); render(); toast(`已新增 ${names.length} 位`);
+  },
+  staffDel(el) {
+    const s = staffById(el.dataset.s);
+    if (!confirm(`刪除「${s.name}」？過去班表上他的資料會一併看不到。離職建議改用「在職」開關。`)) return;
+    S.staff = S.staff.filter(x => x.id !== s.id); saveStaff(); check(); render();
+  },
+  staffMove(el) {
+    const i = S.staff.findIndex(x => x.id === el.dataset.s), dir = +el.dataset.d;
+    let j = i + dir;
+    while (S.staff[j] && S.staff[j].group !== S.staff[i].group) j += dir;
+    if (!S.staff[j]) return;
+    [S.staff[i], S.staff[j]] = [S.staff[j], S.staff[i]]; saveStaff(); render();
+  },
+  staffFlag(el) {
+    const s = staffById(el.dataset.s), k = el.dataset.k;
+    s[k] = s[k] === false; saveStaff(); check(); render();
+  },
+  staffCode(el) {
+    const s = staffById(el.dataset.s), k = el.dataset.k, c = el.dataset.c;
+    const all = workShifts(s.group).filter(x => x.group === s.group).map(x => x.code);
+    let list = k === 'allowed' ? (s.allowed && s.allowed.length ? s.allowed.slice() : all.slice()) : (s.prefer || []).slice();
+    list = list.includes(c) ? list.filter(x => x !== c) : list.concat(c);
+    if (k === 'allowed' && !list.length) return toast('至少要留一個可上的班別', true);
+    s[k] = all.filter(x => list.includes(x));
+    if (k === 'allowed') s.prefer = (s.prefer || []).filter(x => s.allowed.includes(x));
+    saveStaff(); check(); render();
+  },
+
+  // 規則與班別
+  ruleToggle(el) { const r = ruleById(el.dataset.r); r.enabled = !r.enabled; afterRules(); },
+  ruleHard(el) { ruleById(el.dataset.r).hard = el.dataset.v === '1'; afterRules(); },
+  ruleDel(el) { const r = ruleById(el.dataset.r); if (!confirm(`刪除規則「${r.name}」？`)) return; S.cfg.rules = S.cfg.rules.filter(x => x !== r); afterRules(); },
+  rulePick(el) {
+    const r = ruleById(el.dataset.r), k = el.dataset.k, v = el.dataset.num ? +el.dataset.v : el.dataset.v;
+    const list = (r.params[k] || []).slice();
+    r.params[k] = list.includes(v) ? list.filter(x => x !== v) : list.concat(v);
+    afterRules();
+  },
+  ruleAdd() {
+    const type = $('#newRuleType').value, t = E.RULE_TYPES[type];
+    const params = {};
+    t.fields.forEach(f => { params[f.k] = f.t === 'codes' || f.t === 'weekdays' ? [] : f.t === 'num' ? (f.optional ? null : 1) : f.t === 'bool' ? false : f.t === 'dayType' || f.t === 'group' ? 'all' : ''; });
+    S.cfg.rules.push({ id: uid('r'), type, name: '新規則：' + t.name, enabled: true, hard: !t.softOnly, weight: 20, params });
+    afterRules(); toast('已新增在最下面，請設定內容');
+    window.scrollTo(0, document.body.scrollHeight);
+  },
+  ruleReset() {
+    if (!confirm('把規則還原成預設值？自己新增的規則會消失。')) return;
+    S.cfg.rules = clone(E.DEFAULT_RULES).concat(SEED ? clone(SEED.rules || []) : []); afterRules();
+  },
+  shiftToggle(el) { const s = shiftOf(el.dataset.c); s.enabled = s.enabled === false; afterRules(); },
+  shiftAdd() {
+    const code = $('#newShift').value.trim();
+    if (!code) return toast('請輸入代碼', true);
+    if (shiftOf(code)) return toast('這個代碼已經有了', true);
+    S.cfg.shifts.splice(S.cfg.shifts.findIndex(s => s.kind === 'off'), 0, { code, name: code, kind: 'work', group: S.cfg.groups[0].id, start: 8, end: 16, color: '#334155', bg: '#e2e8f0', enabled: true, custom: true });
+    afterRules();
+  },
+  shiftDel(el) {
+    const code = el.dataset.c;
+    if (!confirm(`刪除班別 ${code}？`)) return;
+    S.cfg.shifts = S.cfg.shifts.filter(s => s.code !== code);
+    S.staff.forEach(s => { if (s.allowed) s.allowed = s.allowed.filter(c => c !== code); if (s.prefer) s.prefer = s.prefer.filter(c => c !== code); });
+    saveStaff(); afterRules();
+  },
+
+  // 設定
+  async pwd() {
+    const v = $('#newPwd').value;
+    if (v.length < 4) return toast('密碼至少 4 碼', true);
+    S.cfg.adminHash = await sha(v); await saveCfg(); $('#newPwd').value = ''; toast('密碼已變更');
+  },
+  async backup() {
+    const data = await Store.list('');
+    download(`排班備份_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 1));
+  },
+  restore() { $('#fileIn').click(); },
+};
+
+const CHG = {
+  staffName(el) {
+    const s = staffById(el.dataset.s), v = el.value.trim();
+    if (!v) { el.value = s.name; return; }
+    s.name = v; saveStaff();
+  },
+  ruleName(el) { ruleById(el.dataset.r).name = el.value.trim() || '未命名規則'; saveCfg(); },
+  ruleWeight(el) { ruleById(el.dataset.r).weight = Math.max(0, +el.value || 0); saveCfg(); check(); },
+  ruleNum(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value === '' ? null : +el.value; saveCfg(); check(); },
+  ruleBool(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.checked; saveCfg(); check(); },
+  ruleSel(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value; saveCfg(); check(); },
+  shiftSet(el) { shiftOf(el.dataset.c)[el.dataset.k] = el.dataset.num ? +el.value : el.value; saveCfg(); check(); },
+  cfgSet(el) { S.cfg[el.dataset.k] = el.value.trim() || S.cfg[el.dataset.k]; saveCfg(); render(); },
+  leaveSet(el) { S.cfg.leave[el.dataset.k] = Math.max(0, +el.value || 0); saveCfg(); },
+  holidays(el) {
+    const map = {};
+    el.value.split('\n').forEach(line => {
+      const m = line.trim().match(/^(-)?(\d{4}-\d{2}-\d{2})\s*(.*)$/);
+      if (m) map[m[2]] = m[1] ? null : (m[3] || '假日');
+    });
+    S.cfg.holidays = map; saveCfg(); check(); render();
+  },
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el) { if (!el.disabled) Promise.resolve(ACT[el.dataset.act](el, e)).catch(err => { console.error(err); busy(''); toast('發生錯誤：' + err.message, true); }); return; }
+  if (!e.target.closest('#pop')) closePop();
+});
+document.addEventListener('change', e => { const el = e.target.closest('[data-chg]'); if (el) CHG[el.dataset.chg](el); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePop();
+  if (e.key === 'Enter' && e.target.id === 'adminPwd') ACT.adminLogin();
+});
+$('#fileIn').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data.config || !data.staff) throw new Error('這不是排班備份檔');
+    if (!confirm('匯入會覆蓋目前所有資料，確定嗎？')) return;
+    for (const k of Object.keys(data)) await Store.set(k, data[k]);
+    await loadAll(); await loadMonth(); render(); toast('已匯入');
+  } catch (err) { toast('匯入失敗：' + err.message, true); }
+});
+
+// ── 選班小視窗 ───────────────────────────────────────────
+function openPop(td, id, d) {
+  const p = staffById(id), cur = (S.month.cells[id] || [])[d] || '';
+  const allowed = p.allowed && p.allowed.length ? p.allowed : workShifts(p.group).filter(s => s.group === p.group).map(s => s.code);
+  const opts = workShifts(p.group).filter(s => s.enabled !== false).concat(offShifts());
+  const locked = !!((S.month.locks || {})[id] || {})[d];
+  const pop = $('#pop');
+  pop.innerHTML = `<div class="ttl">${esc(p.name)}　${S.m}/${d + 1}（${E.WD[S.ctx.days[d].wd]}）${(S.requests[id] || []).includes(d) ? '<span class="chip bad" style="margin-left:4px">預假</span>' : ''}</div>
+    <div class="opts">${opts.map(s => `<div class="o ${s.code === cur ? 'cur' : ''} ${s.kind === 'work' && !allowed.includes(s.code) ? 'dim' : ''}" style="background:${s.bg};color:${s.color}" title="${esc(s.name)}" data-act="pick" data-s="${esc(id)}" data-d="${d}" data-c="${esc(s.code)}">${esc(s.code)}</div>`).join('')}</div>
+    <label><input type="checkbox" id="popLock" ${locked ? 'checked' : ''}> 鎖定這格（自動排班不會動它）</label>
+    <div class="foot"><button class="btn sm" data-act="pick" data-s="${esc(id)}" data-d="${d}" data-c="">清空</button><button class="btn sm" data-act="popClose">關閉</button></div>`;
+  pop.style.display = 'block';
+  const r = td.getBoundingClientRect(), w = 232, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + 'px';
+  pop.style.top = (r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+}
+function closePop() { $('#pop').style.display = 'none'; }
+
+// ── 匯出 Excel（版面比照機構原本的班表）──────────────────
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('載入 Excel 元件失敗'));
+    document.head.appendChild(s);
+  });
+}
+function sheetRows(g) {
+  const ctx = S.ctx, n = ctx.dim, people = activeStaff(g.id), offs = offShifts().map(s => s.code);
+  const codes = workShifts(g.id).filter(s => s.group === g.id).map(s => s.code);
+  const rows = [['', `${S.y - 1911}年${S.m}月${S.cfg.facility}${g.name}班表　　休假日數：${S.result.quota == null ? '' : S.result.quota}日`],
+    ['', '日期'].concat(ctx.days.map(x => x.d + 1), ['上班'], offs), ['', '星期'].concat(ctx.days.map(x => E.WD[x.wd]))];
+  people.forEach((p, i) => {
+    const row = (S.month.cells[p.id] || []).concat(new Array(n).fill('')).slice(0, n);
+    rows.push([i + 1, p.name].concat(row, [row.filter(c => codes.includes(c)).length], offs.map(o => row.filter(c => c === o).length)));
+  });
+  rows.push([]);
+  codes.forEach(c => rows.push(['', c].concat(ctx.days.map(x => people.filter(p => p.counted !== false && (S.month.cells[p.id] || [])[x.d] === c).length))));
+  return rows;
+}
+async function exportExcel() {
+  const groups = S.cfg.groups.filter(g => activeStaff(g.id).length);
+  const name = `${S.y - 1911}.${S.m}班表`;
+  try {
+    await loadXlsx();
+    const wb = XLSX.utils.book_new();
+    groups.forEach(g => {
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows(g));
+      ws['!cols'] = [{ wch: 4 }, { wch: 12 }].concat(S.ctx.days.map(() => ({ wch: 4 })));
+      XLSX.utils.book_append_sheet(wb, ws, g.name.slice(0, 28));
+    });
+    XLSX.writeFile(wb, name + '.xlsx');
+  } catch (e) {
+    // 沒有網路時改出 CSV，Excel 一樣打得開
+    const csv = groups.map(g => sheetRows(g).map(r => r.map(c => `"${String(c == null ? '' : c).replace(/"/g, '""')}"`).join(',')).join('\n')).join('\n\n');
+    download(name + '.csv', '﻿' + csv, 'text/csv');
+    toast('無法載入 Excel 元件，已改匯出 CSV');
+  }
+}
+
+// ── 啟動 ─────────────────────────────────────────────────
+(async function start() {
+  await initStore();
+  await loadAll();
+  const d = new Date(); d.setMonth(d.getMonth() + 1, 1);
+  S.y = d.getFullYear(); S.m = d.getMonth() + 1;
+  try {
+    const u = JSON.parse(sessionStorage.getItem('nhs_user') || 'null');
+    if (u && (u.admin || staffById(u.id))) { S.user = u; S.tab = u.admin ? 'sched' : 'leave'; if (!u.admin) S.group = staffById(u.id).group; }
+  } catch (e) {}
+  await loadMonth();
+  render();
+})();
+</script>
+</body>
+</html>
