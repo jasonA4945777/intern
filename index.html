@@ -139,6 +139,12 @@ table.list{width:100%;border-collapse:collapse}
 .form{display:grid;grid-template-columns:140px 1fr;gap:10px 14px;align-items:center;max-width:640px}
 .form textarea{width:100%;min-height:90px}
 
+#modal{position:fixed;inset:0;z-index:65;background:rgba(20,26,40,.45);display:none;align-items:flex-start;justify-content:center;padding:5vh 12px;overflow:auto}
+#modal.show{display:flex}
+.modal-box{background:#fff;border-radius:14px;padding:20px;width:560px;max-width:100%}
+.modal-box h3{font-size:16px;margin-bottom:4px}
+.modal-box table.list td{padding:4px 8px}
+.modal-box .grp td{background:var(--line2);font-weight:700;font-size:12.5px}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b2030;color:#fff;border-radius:999px;padding:9px 18px;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
 #toast.show{opacity:1} #toast.err{background:var(--bad)}
 #busy{position:fixed;inset:0;background:rgba(246,247,249,.8);z-index:70;display:none;place-items:center;font-weight:700}
@@ -151,10 +157,10 @@ table.list{width:100%;border-collapse:collapse}
 <body>
 <div id="app"></div>
 <div id="pop"></div>
+<div id="modal"></div>
 <div id="toast"></div>
 <div id="busy"><div id="busyText">處理中…</div></div>
 <input type="file" id="fileIn" accept=".json" hidden>
-<input type="file" id="xlsIn" accept=".xlsx,.xls" hidden>
 
 <script src="engine.js"></script>
 <script src="seed.js"></script>
@@ -239,7 +245,7 @@ function defaultCfg() {
   return { facility: (SEED && SEED.facility) || '護理之家', groups: clone(E.DEFAULT_GROUPS), shifts: clone(E.DEFAULT_SHIFTS),
     rules: clone(E.DEFAULT_RULES).concat(SEED ? clone(SEED.rules || []) : []), leave: { max: 0, lockDay: 10 }, holidays: {}, adminHash: '' };
 }
-const emptyMonth = () => ({ cells: {}, locks: {}, savedAt: null, published: null });
+const emptyMonth = () => ({ cells: {}, locks: {}, prev: {}, savedAt: null, published: null });
 const workShifts = g => S.cfg.shifts.filter(s => s.kind === 'work' && (!g || !s.group || s.group === g));
 const offShifts = () => S.cfg.shifts.filter(s => s.kind === 'off' && s.enabled !== false);
 const shiftOf = c => S.cfg.shifts.find(s => s.code === c);
@@ -268,7 +274,7 @@ async function loadMonth() {
   S.month = Object.assign(emptyMonth(), await Store.get('sched_' + k) || {});
   const draft = readDraft(S.y, S.m);
   S.dirty = !!draft;
-  if (draft) { S.month.cells = draft.cells || {}; S.month.locks = draft.locks || {}; }
+  if (draft) { S.month.cells = draft.cells || {}; S.month.locks = draft.locks || {}; S.month.prev = draft.prev || {}; }
   const reqs = await Store.list(`req_${k}_`);
   S.requests = {};
   Object.keys(reqs).forEach(key => { S.requests[key.slice(`req_${k}_`.length)] = reqs[key].days || []; });
@@ -287,7 +293,72 @@ function mkCtx(group) {
     Object.keys(S.month.locks[id]).forEach(d => { const c = (S.month.cells[id] || [])[d]; if (c) locks[id][d] = c; });
   });
   return E.buildContext({ year: S.y, month: S.m, staff: activeStaff(group), shifts: S.cfg.shifts, groups: S.cfg.groups, rules: S.cfg.rules,
-    requests: S.requests, locks, prevTail: S.prevTail, holidays: S.cfg.holidays });
+    requests: S.requests, locks, prevTail: effectiveTail(), holidays: S.cfg.holidays });
+}
+
+// ── 上月連班 ─────────────────────────────────────────────
+// 預設從上個月的班表自動帶（S.prevTail）；主管可在「上月連班」視窗逐人改，
+// 手動改過的存在本月班表的 prev 裡：{ 人員id: { days: 連上天數, code: 最後班別 } }
+const isWorkCode = c => { const sh = shiftOf(c); return !!(sh && sh.kind === 'work'); };
+function autoPrev(id) {
+  const tail = S.prevTail[id] || [];
+  let days = 0;
+  for (let i = tail.length - 1; i >= 0 && isWorkCode(tail[i]); i--) days++;
+  return { days, code: days ? tail[tail.length - 1] : '' };
+}
+function effectiveTail() {
+  const out = Object.assign({}, S.prevTail), manual = S.month.prev || {};
+  Object.keys(manual).forEach(id => {
+    const m = manual[id];
+    out[id] = m.days > 0 && isWorkCode(m.code) ? new Array(Math.min(7, m.days)).fill(m.code) : ['OF'];
+  });
+  return out;
+}
+function openPrev() {
+  const py = S.m === 1 ? S.y - 1 : S.y, pm = S.m === 1 ? 12 : S.m - 1;
+  const hasAuto = Object.keys(S.prevTail).length > 0;
+  const rows = S.cfg.groups.map(g => {
+    const people = activeStaff(g.id).filter(p => p.counted !== false);
+    if (!people.length) return '';
+    const codes = workShifts(g.id).filter(x => x.group === g.id && x.enabled !== false).map(x => x.code);
+    return `<tr class="grp"><td colspan="3">${esc(g.name)}</td></tr>` + people.map(p => `<tr data-prev="${esc(p.id)}">
+      <td>${esc(p.name)}</td>
+      <td><input type="number" min="0" max="7" class="pd" style="width:64px"> 天</td>
+      <td><select class="pc"><option value="">休假</option>${codes.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></td></tr>`).join('');
+  }).join('');
+  $('#modal').innerHTML = `<div class="modal-box">
+    <h3>上月連班設定（${py - 1911} 年 ${pm} 月底）</h3>
+    <div class="mute small" style="margin-bottom:10px">填每個人到上月最後一天為止已經連續上班幾天、最後一天上什麼班。${S.m} 月排班會接著算連班上限與輪班間隔。${hasAuto ? `目前的數字是從系統裡 ${pm} 月班表帶出來的，可以直接改。` : `系統裡沒有 ${pm} 月班表，請手動填；沒填的視為上月底休假。`}</div>
+    <table class="list"><thead><tr><th>姓名</th><th>已連上</th><th>上月最後一天</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="bar" style="margin:14px 0 0">${hasAuto ? `<button class="btn" data-act="prevAuto">全部改回 ${pm} 月班表的數字</button>` : ''}<div class="sp"></div>
+      <button class="btn" data-act="prevClose">取消</button><button class="btn primary" data-act="prevSave">套用</button></div></div>`;
+  fillPrev(false);
+  $('#modal').classList.add('show');
+}
+function fillPrev(autoOnly) {
+  document.querySelectorAll('#modal tr[data-prev]').forEach(tr => {
+    const id = tr.dataset.prev, v = (!autoOnly && (S.month.prev || {})[id]) || autoPrev(id);
+    tr.querySelector('.pd').value = v.days || 0;
+    tr.querySelector('.pc').value = v.days > 0 ? v.code : '';
+  });
+}
+function savePrev() {
+  const prev = {};
+  let bad = '';
+  document.querySelectorAll('#modal tr[data-prev]').forEach(tr => {
+    const id = tr.dataset.prev, code = tr.querySelector('.pc').value;
+    let days = Math.max(0, Math.min(7, Math.round(+tr.querySelector('.pd').value || 0)));
+    if (days > 0 && !code) bad = bad || staffById(id).name + '：有連上天數，請選最後一天的班別';
+    if (!code) days = 0;
+    if (code && days === 0) days = 1;
+    const a = autoPrev(id);
+    if (days !== a.days || (days > 0 && code !== a.code)) prev[id] = { days, code: days ? code : '' };   // 只記和自動帶入不同的
+  });
+  if (bad) return toast(bad, true);
+  S.month.prev = prev;
+  $('#modal').classList.remove('show');
+  markDirty(); check(); render();
+  toast(Object.keys(prev).length ? `已套用，${Object.keys(prev).length} 位是手動設定。記得存檔` : '已套用，全部沿用上月班表');
 }
 function check() { S.ctx = mkCtx(); S.result = E.validate(S.ctx, S.month.cells); }
 // 班表的修改先留在這台裝置當草稿，按「存檔」才寫進資料庫。
@@ -297,7 +368,7 @@ function readDraft(y, m) { try { return JSON.parse(localStorage.getItem(draftKey
 function clearDraft() { try { localStorage.removeItem(draftKey(S.y, S.m)); } catch (e) {} S.dirty = false; }
 function markDirty() {
   S.dirty = true;
-  try { localStorage.setItem(draftKey(S.y, S.m), JSON.stringify({ cells: S.month.cells, locks: S.month.locks || {} })); } catch (e) {}
+  try { localStorage.setItem(draftKey(S.y, S.m), JSON.stringify({ cells: S.month.cells, locks: S.month.locks || {}, prev: S.month.prev || {} })); } catch (e) {}
 }
 async function saveMonth() {
   S.month.savedAt = new Date().toISOString();
@@ -407,7 +478,7 @@ function schedPage() {
       <button class="btn ${S.leaveMode ? 'on' : ''}" data-act="leaveMode" title="開啟後，點格子是登記或取消預假">預假登記${S.leaveMode ? '中' : ''}</button>
       <button class="btn" data-act="undo" ${S.undo.length ? '' : 'disabled'}>復原</button>
       <button class="btn" data-act="clear">清空</button>
-      <button class="btn" data-act="import" title="匯入機構格式的 Excel 班表到目前這個月（例如上個月的實際班表）">匯入班表</button>
+      <button class="btn ${Object.keys(S.month.prev || {}).length ? 'on' : ''}" data-act="prevOpen" title="設定每個人上個月月底已連上幾天、最後一班是什麼，本月排班會接續計算">上月連班</button>
       <button class="btn" data-act="export">匯出 Excel</button>
       <button class="btn" data-act="solve" data-alt="1" title="用另一組亂數重排，鎖定格與預假不變" ${hasCells ? '' : 'disabled'}>換一份</button>
       <button class="btn primary" data-act="solve">自動排班</button>
@@ -707,7 +778,10 @@ const ACT = {
     if (!confirm('放棄未存檔的修改，回到上次存檔的內容？')) return;
     clearDraft(); await loadMonth(); render();
   },
-  import() { $('#xlsIn').click(); },
+  prevOpen() { openPrev(); },
+  prevAuto() { fillPrev(true); },
+  prevSave() { savePrev(); },
+  prevClose() { $('#modal').classList.remove('show'); },
   export() { exportExcel(); },
 
   // 同仁預假
@@ -839,7 +913,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => { const el = e.target.closest('[data-chg]'); if (el) CHG[el.dataset.chg](el); });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closePop();
+  if (e.key === 'Escape') { closePop(); $('#modal').classList.remove('show'); }
   if (e.key === 'Enter' && e.target.id === 'adminPwd') ACT.adminLogin();
 });
 $('#fileIn').addEventListener('change', async e => {
@@ -871,76 +945,6 @@ function openPop(td, id, d) {
   pop.style.top = (r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
 }
 function closePop() { $('#pop').style.display = 'none'; }
-
-// ── 匯入 Excel 班表（機構原本的格式：每組一張工作表，有「日期」列，姓名在同一欄）──
-// 匯入到目前檢視的月份，以姓名對人；匯入後是未存檔狀態，確認沒問題再按存檔。
-function parseSheetRows(rows) {
-  let hr = -1, nc = -1;
-  for (let r = 0; r < Math.min(rows.length, 12) && hr < 0; r++) {
-    const c = (rows[r] || []).findIndex(v => String(v == null ? '' : v).trim() === '日期');
-    if (c >= 0) { hr = r; nc = c; }
-  }
-  if (hr < 0) return null;
-  const dayCol = {};
-  (rows[hr] || []).forEach((v, c) => { const n = +v; if (c > nc && Number.isInteger(n) && n >= 1 && n <= 31 && dayCol[n] == null) dayCol[n] = c; });
-  const title = rows.slice(0, hr + 1).map(r => (r || []).join('')).join('');
-  const m = title.match(/(\d{2,4})\s*年\s*(\d{1,2})\s*月/);
-  const people = [];
-  for (let r = hr + 1; r < rows.length; r++) {
-    const name = String((rows[r] || [])[nc] == null ? '' : rows[r][nc]).trim();
-    if (/製表|主管/.test((rows[r] || []).join(''))) break;      // 簽名列以下是人數統計，不是人員
-    if (!name || name === '星期') continue;
-    people.push({ name, row: rows[r] });
-  }
-  return { dayCol, people, ym: m ? { y: +m[1] < 1000 ? +m[1] + 1911 : +m[1], m: +m[2] } : null };
-}
-async function importExcel(file) {
-  await loadXlsx();
-  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const n = dim(), known = new Set(S.cfg.shifts.map(s => s.code)), alias = { OFF: 'OF' };
-  const byName = {};
-  S.staff.forEach(p => { byName[p.name] = p; });
-  const cells = {}, missing = [], badCodes = new Set();
-  let fileYm = null, found = false;
-  wb.SheetNames.forEach(sn => {
-    const parsed = parseSheetRows(XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' }));
-    if (!parsed) return;
-    found = true; fileYm = fileYm || parsed.ym;
-    parsed.people.forEach(({ name, row }) => {
-      const p = byName[name];
-      if (!p) { if (Object.values(parsed.dayCol).some(c => String(row[c] == null ? '' : row[c]).trim())) missing.push(name); return; }
-      const out = new Array(n).fill('');
-      for (let d = 1; d <= n; d++) {
-        if (parsed.dayCol[d] == null) continue;
-        let v = String(row[parsed.dayCol[d]] == null ? '' : row[parsed.dayCol[d]]).trim();
-        v = alias[v] || v;
-        if (v && !known.has(v)) { badCodes.add(v); v = ''; }
-        out[d - 1] = v;
-      }
-      cells[p.id] = out;
-    });
-  });
-  if (!found) throw new Error('找不到班表：工作表裡要有「日期」那一列');
-  const count = Object.keys(cells).length;
-  if (!count) throw new Error('檔案裡的姓名和人員名單都對不上');
-  if (fileYm && (fileYm.y !== S.y || fileYm.m !== S.m) && !confirm(`這份檔案標示的是 ${fileYm.y - 1911} 年 ${fileYm.m} 月，目前畫面是 ${S.y - 1911} 年 ${S.m} 月。仍要匯入到 ${S.m} 月嗎？`)) return;
-  if (Object.keys(S.month.cells).length && !confirm(`匯入會覆蓋 ${S.m} 月 ${count} 位同仁目前的班表（可按復原），確定嗎？`)) return;
-  pushUndo();
-  Object.assign(S.month.cells, cells);
-  Object.keys(cells).forEach(id => { if (S.month.locks) delete S.month.locks[id]; });
-  markDirty(); check(); render();
-  const notes = [];
-  if (missing.length) notes.push(`名單裡沒有：${missing.join('、')}`);
-  if (badCodes.size) notes.push(`不認得的班別已留白：${[...badCodes].join('、')}`);
-  toast(`已匯入 ${count} 位，確認後請按存檔。${notes.join('；')}`, notes.length > 0);
-}
-$('#xlsIn').addEventListener('change', async e => {
-  const f = e.target.files[0]; e.target.value = '';
-  if (!f) return;
-  busy('讀取中…');
-  try { await importExcel(f); } catch (err) { console.error(err); toast('匯入失敗：' + err.message, true); }
-  busy('');
-});
 
 // ── 匯出 Excel（版面比照機構原本的班表）──────────────────
 function loadXlsx() {
