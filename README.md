@@ -39,4 +39,5 @@
 
 ## 部署
 
-純靜態檔案，放上 GitHub Pages 或 Cloudflare Pages 即可，不需要建置步驟。
+純靜態檔案，不需要建置步驟。由 Cloudflare Workers 從 `main` 分支自動部署（設定見 `wrangler.jsonc`，
+`.assetsignore` 列出不對外提供的檔案）。
