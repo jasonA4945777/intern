@@ -142,6 +142,9 @@ table.list{width:100%;border-collapse:collapse}
 .rule input.rname:hover,.rule input.rname:focus{border-color:var(--line);padding-left:10px;background:#fff}
 .rule .params{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px;align-items:center}
 .rule .params label{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mute)}
+.rstat{font-size:12.5px;margin-top:8px;color:var(--mute)}
+.rstat.bad{color:var(--bad);font-weight:700;background:var(--bad-bg);border-radius:6px;padding:5px 9px;display:inline-block}
+.rstat.warn{color:var(--warn)} .rstat.ok{color:var(--ok)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{border:0;background:#fff;padding:5px 10px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--mute)}
 .seg button.on{background:var(--text);color:#fff}
@@ -339,11 +342,11 @@ function scoreBreakdown() {
       const unit = hard ? E.HARD : +r.weight || 0, extraW = Math.max(0, +(r.params || {}).extraWeight || 0);
       let extra = 0, less = 0;
       Object.values(S.result.stats).forEach((st, i) => { if (S.ctx.staff[i].counted && S.result.quota != null) { extra += Math.max(0, st.off - S.result.quota); less += Math.max(0, S.result.quota - st.off); } });
-      if (less && unit) rows.push({ name: r.name + '：少休', hard, weight: r.weight, cost: less * unit, note: `少休 ${less} 天` });
-      if (extra && extraW) rows.push({ name: r.name + '：多休', hard: false, weight: extraW, cost: extra * extraW, note: `多休 ${extra} 天` });
+      if (less && unit) rows.push({ id: r.id, name: r.name + '：少休', hard, weight: r.weight, cost: less * unit, note: `少休 ${less} 天` });
+      if (extra && extraW) rows.push({ id: r.id, name: r.name + '：多休', hard: false, weight: extraW, cost: extra * extraW, note: `多休 ${extra} 天` });
       return;
     }
-    rows.push({ name: r.name, hard, weight: r.weight, cost, fair: /^fair/.test(r.type), kinds: r.type === 'maxKinds' });
+    rows.push({ id: r.id, name: r.name, hard, weight: r.weight, cost, fair: /^fair/.test(r.type), kinds: r.type === 'maxKinds' });
   });
   if (total - sum > 0.05) rows.push({ name: '基本檢查（空白格、排到不能上的班別或停用的班別）', hard: true, cost: total - sum });
   rows.sort((a, b) => b.cost - a.cost);
@@ -681,6 +684,42 @@ function staffPage() {
     + `<div class="mute small">「主要班別」：自動排班會盡量讓他上這個班（目前的設定是從 9 月班表推出來的，八成以上都上同一班的人才會標）。「計入人力」關閉＝兼職或實習，不算進每日人數，只排「規則」頁設定的固定星期班別。</div>`;
 }
 
+// ── 規則有沒有生效 ───────────────────────────────────────
+// 規則的名稱只是給人看的標籤，系統照「類型＋設定值」執行。這裡檢查設定是否完整到能生效。
+const ONE_ONLY = ['minRest', 'offQuota', 'leaveOff', 'preferShift', 'fewChanges', 'isolatedWork'];
+function ruleProblem(r) {
+  const t = E.RULE_TYPES[r.type], p = r.params || {}, has = v => v != null && v !== '';
+  if (!t) return '系統不認得這個規則類型';
+  const need = [];
+  t.fields.forEach(f => {
+    if (f.optional || f.t === 'bool' || f.t === 'dayType' || f.t === 'group' || f.t === 'select') return;
+    const v = p[f.k];
+    if (f.t === 'codes' || f.t === 'weekdays' ? !(v || []).length : !has(v)) need.push(f.label);
+  });
+  if (need.length) return `還沒設定：${need.join('、')}`;
+  if (t.fields.some(f => f.k === 'min') && t.fields.some(f => f.k === 'max') && !has(p.min) && !has(p.max)) return '「最少」和「最多」都沒填，等於沒有限制';
+  if (p.staff && !staffById(p.staff)) return '指定的人員已不在名單上';
+  const gone = [].concat(p.codes || [], p.code || []).filter(c => { const sh = shiftOf(c); return !sh || sh.enabled === false; });
+  if (gone.length) return `班別 ${gone.join('、')} 已停用或不存在`;
+  if (ONE_ONLY.includes(r.type) && S.cfg.rules.find(x => x.enabled && x.type === r.type) !== r) return '同類型的規則只有排在最前面的那條有效，這條不會被用到';
+  if (r.type === 'maxKinds') {
+    const groups = S.cfg.groups.filter(g => !p.group || p.group === 'all' || p.group === g.id);
+    if (groups.every(g => workShifts(g.id).filter(x => x.group === g.id && x.enabled !== false).length <= +p.max)) return `適用的組別本來就只有 ${p.max} 種以下的班別，這條不會有任何影響`;
+  }
+  if (!(r.hard && !t.softOnly) && !(+r.weight > 0)) return '扣分是 0，等於不管這條';
+  return '';
+}
+function ruleStatus(r, costs) {
+  if (!r.enabled) return '';
+  const bad = ruleProblem(r);
+  if (bad) return `<div class="rstat bad">⚠ 這條目前不會生效：${esc(bad)}</div>`;
+  if (!costs) return `<div class="rstat">設定完整，會生效。${S.m} 月還沒排班，排了之後這裡會顯示它扣了多少分。</div>`;
+  const cost = costs[r.id] || 0, n = S.result.violations.filter(v => v.rule === r.id).length;
+  return cost > 0.05
+    ? `<div class="rstat warn">設定完整，會生效。${S.m} 月班表目前因為這條扣 <b>${fmtScore(cost)}</b> 分${n ? `（${n} 處）` : ''}</div>`
+    : `<div class="rstat ok">設定完整，會生效。${S.m} 月班表目前沒有違反這條</div>`;
+}
+
 // ── 規則 ─────────────────────────────────────────────────
 function fieldHtml(r, f) {
   const v = (r.params || {})[f.k], at = `data-r="${esc(r.id)}" data-k="${f.k}"`;
@@ -702,6 +741,9 @@ function fieldHtml(r, f) {
 }
 function rulesPage() {
   const T = E.RULE_TYPES;
+  const scheduled = S.staff.some(p => (S.month.cells[p.id] || []).some(Boolean));
+  let costs = null;
+  if (scheduled) { costs = {}; scoreBreakdown().rows.forEach(x => { if (x.id) costs[x.id] = (costs[x.id] || 0) + x.cost; }); }
   const rule = r => {
     const t = T[r.type]; if (!t) return '';
     const hard = r.hard && !t.softOnly;
@@ -709,7 +751,8 @@ function rulesPage() {
       <button class="sw ${r.enabled ? 'on' : ''}" data-act="ruleToggle" data-r="${esc(r.id)}" aria-label="啟用"></button>
       <div class="body"><input class="rname" type="text" value="${esc(r.name)}" data-chg="ruleName" data-r="${esc(r.id)}">
         <div class="mute small">${esc(t.name)}：${esc(t.desc)}</div>
-        ${t.fields.length ? `<div class="params">${t.fields.map(f => fieldHtml(r, f)).join('')}</div>` : ''}</div>
+        ${t.fields.length ? `<div class="params">${t.fields.map(f => fieldHtml(r, f)).join('')}</div>` : ''}
+        ${ruleStatus(r, costs)}</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         ${t.softOnly ? '' : `<div class="seg"><button class="${hard ? 'on' : ''}" data-act="ruleHard" data-r="${esc(r.id)}" data-v="1">一定要</button><button class="${hard ? '' : 'on'}" data-act="ruleHard" data-r="${esc(r.id)}" data-v="0">盡量</button></div>`}
         ${hard ? '' : `<label class="small mute">扣分 <input type="number" value="${esc(r.weight)}" data-chg="ruleWeight" data-r="${esc(r.id)}" style="width:64px"></label>`}
@@ -740,7 +783,9 @@ function rulesPage() {
     <div class="card"><div class="bar" style="margin-bottom:0"><h3 style="margin:0">排班規則</h3><div class="sp"></div>
         <select id="newRuleType">${addable.map(k => `<option value="${k}">${esc(T[k].name)}</option>`).join('')}</select>
         <button class="btn" data-act="ruleAdd">新增規則</button><button class="btn" data-act="ruleReset">還原預設</button></div>
-      <div class="mute small" style="margin:6px 0 4px">「一定要」的規則違反就算排不成；「盡量」的規則違反一次扣一次分，分數越高越優先遵守。改完立即生效，回班表頁重排即可。</div>
+      <div class="mute small" style="margin:6px 0 4px">「一定要」的規則違反就算排不成；「盡量」的規則違反一次扣一次分，分數越高越優先遵守。改完立即生效，回班表頁重排即可。<br>
+        <b>規則名稱只是標籤，系統照「類型」和下面的設定值執行。</b>每條規則下方會顯示它有沒有生效；想要的規則如果現有類型表達不了，名稱寫得再清楚也不會有作用，需要另外新增類型。</div>
+      ${S.cfg.rules.some(r => r.enabled && ruleProblem(r)) ? `<div class="notice closed" style="margin:8px 0">有 ${S.cfg.rules.filter(r => r.enabled && ruleProblem(r)).length} 條規則目前不會生效，請看下方紅字。</div>` : ''}
       ${S.cfg.rules.map(rule).join('')}</div>`;
 }
 
@@ -983,11 +1028,11 @@ const CHG = {
     s.name = v; saveStaff();
   },
   ruleName(el) { ruleById(el.dataset.r).name = el.value.trim() || '未命名規則'; saveCfg(); },
-  ruleWeight(el) { ruleById(el.dataset.r).weight = Math.max(0, +el.value || 0); saveCfg(); check(); },
-  ruleNum(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value === '' ? null : +el.value; saveCfg(); check(); },
-  ruleBool(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.checked; saveCfg(); check(); },
-  ruleSel(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value; saveCfg(); check(); },
-  shiftSet(el) { shiftOf(el.dataset.c)[el.dataset.k] = el.dataset.num ? +el.value : el.value; saveCfg(); check(); },
+  ruleWeight(el) { ruleById(el.dataset.r).weight = Math.max(0, +el.value || 0); saveCfg(); check(); render(); },
+  ruleNum(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value === '' ? null : +el.value; saveCfg(); check(); render(); },
+  ruleBool(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.checked; saveCfg(); check(); render(); },
+  ruleSel(el) { ruleById(el.dataset.r).params[el.dataset.k] = el.value; saveCfg(); check(); render(); },
+  shiftSet(el) { shiftOf(el.dataset.c)[el.dataset.k] = el.dataset.num ? +el.value : el.value; saveCfg(); check(); render(); },
   cfgSet(el) { S.cfg[el.dataset.k] = el.value.trim() || S.cfg[el.dataset.k]; saveCfg(); render(); },
   leaveSet(el) { S.cfg.leave[el.dataset.k] = Math.max(0, +el.value || 0); saveCfg(); },
   holidays(el) {
