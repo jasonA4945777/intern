@@ -423,7 +423,7 @@
     const hard = out.filter(v => v.hard), soft = out.filter(v => !v.hard);
     const byId = {};
     ctx.staff.forEach((s, i) => { byId[s.id] = stats[i]; });
-    return { score: Math.round(score), hard, soft, violations: out, stats: byId, dayCnt, quota: ctx.quota };
+    return { score: Math.round(score), exact: score, hard, soft, violations: out, stats: byId, dayCnt, quota: ctx.quota };
   }
 
   // ── 人力試算：排之前先看人夠不夠 ─────────────────────────
