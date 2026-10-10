@@ -497,7 +497,7 @@ function schedPage() {
           <button class="btn sm" data-act="lockToggle" style="margin-left:6px">${st.locked ? '重新開放' : '提前截止'}</button></div></div>
     </div>
     <div class="bar"><div class="chips">
-      <span class="chip ${r.hard.length ? 'bad' : 'ok'}">${hasCells ? (r.hard.length ? `必須修正 ${r.hard.length}` : '沒有違規') : '尚未排班'}</span>
+      <span class="chip ${!hasCells ? '' : r.hard.length ? 'bad' : 'ok'}">${hasCells ? (r.hard.length ? `必須修正 ${r.hard.length}` : '沒有違規') : '尚未排班'}</span>
       ${hasCells && visible.length ? `<span class="chip warn">提醒 ${visible.length}</span>` : ''}
       ${S.dirty ? '<span class="chip warn">有修改尚未存檔（只在這台裝置）</span>' : S.month.savedAt ? `<span class="chip">上次存檔 ${fmtTime(S.month.savedAt)}</span>` : ''}
       ${pub ? `<span class="chip">${changed ? '發布後有修改，同仁看到的還是舊版' : '同仁已可看到這份班表'}</span>` : '<span class="chip">尚未發布，同仁看不到</span>'}
@@ -516,7 +516,8 @@ function violList(list) {
 function gridHtml({ edit, cells, mine }) {
   const ctx = S.ctx, n = ctx.dim, src = cells || S.month.cells;
   const vmap = {}, cmap = {};
-  if (edit) S.result.violations.forEach(v => {
+  const any = Object.values(src).some(row => (row || []).some(Boolean));     // 整月還沒排時不標紅
+  if (edit && any) S.result.violations.forEach(v => {
     if (v.quiet) return;
     if (v.staff && v.day != null) { const k = v.staff + '_' + v.day; if (v.hard || !vmap[k]) vmap[k] = v.hard ? 'vh' : 'vs'; }
     else if (v.codes && v.day != null) v.codes.forEach(c => { const k = c + '_' + v.day; if (v.hard || !cmap[k]) cmap[k] = v.hard ? 'low' : 'thin'; });
