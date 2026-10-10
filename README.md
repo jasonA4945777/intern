@@ -33,9 +33,11 @@
 
 ## 資料存放
 
-預設存在瀏覽器（localStorage），只有這台裝置看得到。
-要讓同仁用自己的手機登記預假，把 Firebase 專案設定填進 `index.html` 開頭的 `FIREBASE_CONFIG`，
-資料就會改存 Firestore 的 `nhSchedule` 集合。
+資料存在 Firebase 專案 `nursehome-8b74b` 的 Firestore，集合名稱 `nhSchedule`，各裝置同步。
+設定在 `index.html` 開頭的 `FIREBASE_CONFIG`；連不上時會自動改存瀏覽器（localStorage），
+並在「設定」頁顯示原因。把 `FIREBASE_CONFIG` 設成 `null` 則一律只存本機。
+
+系統沒有帳號登入，Firestore 規則是開放 `nhSchedule` 讀寫，管理密碼只保護畫面操作。
 
 ## 部署
 

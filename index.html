@@ -161,7 +161,14 @@ table.list{width:100%;border-collapse:collapse}
  * ============================================================ */
 
 // 填入 Firebase 專案設定後，資料會改存 Firestore、跨裝置同步；留 null 則只存在這台瀏覽器。
-const FIREBASE_CONFIG = null;
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAKMQTHOrlqn3g_j-49Mp7ndOzWcYCO5PI",
+  authDomain: "nursehome-8b74b.firebaseapp.com",
+  projectId: "nursehome-8b74b",
+  storageBucket: "nursehome-8b74b.firebasestorage.app",
+  messagingSenderId: "884392588679",
+  appId: "1:884392588679:web:144e7810b959ca7d494f22",
+};
 const FS_COLLECTION = 'nhSchedule';
 
 const E = window.NHEngine, SEED = window.NH_SEED || null;
@@ -188,7 +195,7 @@ const LocalStore = {
     return out;
   },
 };
-let Store = LocalStore;
+let Store = LocalStore, cloudError = '';
 async function initStore() {
   if (!FIREBASE_CONFIG) return;
   try {
@@ -202,14 +209,19 @@ async function initStore() {
       async set(k, v) { await fs.setDoc(ref(k), { json: JSON.stringify(v), at: new Date().toISOString() }); },
       async del(k) { await fs.deleteDoc(ref(k)); },
       async list(prefix) {
-        const q = fs.query(fs.collection(db, FS_COLLECTION), fs.where(fs.documentId(), '>=', prefix), fs.where(fs.documentId(), '<', prefix + ''));
+        const col = fs.collection(db, FS_COLLECTION);
+        const q = prefix ? fs.query(col, fs.where(fs.documentId(), '>=', prefix), fs.where(fs.documentId(), '<', prefix + '\uf8ff')) : col;
         const out = {};
         (await fs.getDocs(q)).forEach(d => { out[d.id] = JSON.parse(d.data().json); });
         return out;
       },
     };
+    // 先讀一次確認連得上（金鑰錯、規則沒開、沒網路都會在這裡失敗）
+    await Promise.race([Store.get('config'), new Promise((_, rej) => setTimeout(() => rej(new Error('連線逾時')), 12000))]);
   } catch (e) {
     console.error(e);
+    Store = LocalStore;
+    cloudError = e.code || e.message || String(e);
     toast('連不上雲端資料庫，暫時改存在這台裝置', true);
   }
 }
@@ -553,7 +565,7 @@ function settingsPage() {
     </div></div>
     <div class="card"><h3>管理密碼</h3><div class="bar" style="margin:0"><input type="password" id="newPwd" placeholder="新密碼（至少 4 碼）"><button class="btn" data-act="pwd">變更</button></div></div>
     <div class="card"><h3>資料</h3>
-      <div class="mute small" style="margin-bottom:10px">${Store.mode === 'cloud' ? '資料存在雲端資料庫，各裝置同步。' : '資料目前只存在這台裝置的瀏覽器。要讓同仁用自己的手機登記預假，需在 index.html 開頭填入 Firebase 設定。'}</div>
+      <div class="mute small" style="margin-bottom:10px">${Store.mode === 'cloud' ? `資料存在雲端資料庫（Firebase 專案 ${esc(FIREBASE_CONFIG.projectId)}），各裝置同步。` : cloudError ? `<b style="color:var(--bad)">雲端資料庫連線失敗（${esc(cloudError)}），目前改存在這台裝置的瀏覽器，其他裝置看不到。</b>` : '資料目前只存在這台裝置的瀏覽器。要讓同仁用自己的手機登記預假，需在 index.html 開頭填入 Firebase 設定。'}</div>
       <div class="bar" style="margin:0"><button class="btn" data-act="backup">匯出備份</button><button class="btn" data-act="restore">匯入備份</button></div></div>`;
 }
 
